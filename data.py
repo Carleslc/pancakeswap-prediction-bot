@@ -12,7 +12,7 @@ from binance.client import Client
 DATA_PATH = Path('data')
 LENGTH = '7 day'
 INTERVAL = Client.KLINE_INTERVAL_1MINUTE
-DATA_FILE = 'bnbusdt_' + INTERVAL
+DATA_FILE = f"bnbusdt_{LENGTH.replace(' ', '_')}_{INTERVAL}"
 
 API = None # Client
 
@@ -74,9 +74,7 @@ def load_data(filename: str, columns: list[str] = None) -> pd.DataFrame:
   return data
 
 def plot_data(data: pd.DataFrame):
-  TIMEZONE = 'Europe/Madrid'
-
-  data['close_time'] = pd.DatetimeIndex(pd.to_datetime(data['close_time'], unit='ms')).tz_localize('UTC').tz_convert(TIMEZONE)
+  data['close_time'] = ms_to_datetime(data, 'close_time')
 
   plt.figure(figsize=(10,5))
   plt.title("BNB/USDT Training Data")
@@ -84,6 +82,9 @@ def plot_data(data: pd.DataFrame):
   plt.ylabel('Price')
   plt.plot(data['close_time'], data['close'], color='green')
   plt.show()
+
+def ms_to_datetime(data: pd.DataFrame, column: str, timezone = 'Europe/Madrid'):
+  return pd.DatetimeIndex(pd.to_datetime(data[column], unit='ms')).tz_localize('UTC').tz_convert(timezone)
 
 if __name__ == "__main__":
   if not exists_data(DATA_FILE):

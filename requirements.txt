@@ -6,3 +6,4 @@ python-binance
 selenium
 sklearn
 scipy
+seaborn
