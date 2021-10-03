@@ -1,7 +1,8 @@
 numpy
 pandas
 matplotlib
-sklearn
 python-dotenv
 python-binance
 selenium
+sklearn
+scipy
