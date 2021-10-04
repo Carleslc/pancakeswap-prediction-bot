@@ -1,30 +1,23 @@
 import os
 
-import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-
-from pathlib import Path
 
 from dotenv import load_dotenv
-from binance.client import Client
+from pathlib import Path
 
+from utils import error
+from settings import API, SYMBOL, LENGTH, INTERVAL
+
+DATA_FILE = f"{SYMBOL.replace('/', '').lower()}_{LENGTH.replace(' ', '_')}_{INTERVAL}"
 DATA_PATH = Path('data')
-LENGTH = '1 month'
-INTERVAL = Client.KLINE_INTERVAL_1MINUTE
-DATA_FILE = f"bnbusdt_{LENGTH.replace(' ', '_')}_{INTERVAL}"
 
-API = None # Client
+API_CLIENT: API = None
 
-def error(message: str):
-  print(f'ERROR: {message}')
-  exit(1)
+def load_api_client() -> API:
+  global API_CLIENT
 
-def load_api_client() -> Client:
-  global API
-
-  if not API:
-    print("Loading Binance API...")
+  if not API_CLIENT:
+    print(f"Loading {type(API).__name__} API...")
 
     load_dotenv()
 
@@ -36,36 +29,30 @@ def load_api_client() -> Client:
     if not api_secret:
       error("Missing API_SECRET (.env)")
 
-    API = Client(api_key, api_secret)
+    API_CLIENT = API(api_key, api_secret)
+  
+  return API_CLIENT
 
-def get_data(symbol = 'BNBUSDT', length = LENGTH, interval = INTERVAL) -> pd.DataFrame:
+def get_data(symbol = SYMBOL, length = LENGTH, interval = INTERVAL) -> pd.DataFrame:
+  load_api_client()
+
   print(f"Fetching data from Binance ({symbol} {length} {interval})...")
 
-  data = API.get_historical_klines(symbol, interval, f'{length} UTC') # list of lists
-  data = np.array(data) # convert to numpy 2D array (rows, columns)
-  data = data[:, :-1] # skip last 'ignore' column on numpy array
-
-  columns = [
-    'open_time', 'open', 'high', 'low', 'close', 'volume',
-    'close_time', 'quote_asset_volume', 'number_of_trades',
-    'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume'
-  ]
-
-  return pd.DataFrame(data, columns=columns)
+  return API_CLIENT.get_historical_data(symbol, length, interval)
 
 def get_data_file_path(filename: str) -> Path:
   return DATA_PATH / f'{filename}.csv'
 
-def exists_data(filename: str) -> bool:
+def exists_data(filename: str = DATA_FILE) -> bool:
   return get_data_file_path(filename).exists()
 
-def save_data(filename: str, data: pd.DataFrame):
+def save_data(data: pd.DataFrame, filename: str = DATA_FILE):
   path = get_data_file_path(filename)
   os.makedirs(DATA_PATH, exist_ok=True)
   data.to_csv(path, index=False, header=True)
   print(f"Saved data: {path}")
 
-def load_data(filename: str, columns: list[str] = None) -> pd.DataFrame:
+def load_data(filename: str = DATA_FILE, columns: list[str] = None) -> pd.DataFrame:
   print("Loading data...")
   path = get_data_file_path(filename)
   data = pd.read_csv(path)
@@ -73,24 +60,12 @@ def load_data(filename: str, columns: list[str] = None) -> pd.DataFrame:
   print(f"Loaded: {path}")
   return data
 
-def plot_data(data: pd.DataFrame):
-  data['close_time'] = ms_to_datetime(data, 'close_time')
-
-  plt.figure(figsize=(10,5))
-  plt.title("BNB/USDT Training Data")
-  plt.xlabel('Date')
-  plt.ylabel('Price')
-  plt.plot(data['close_time'], data['close'], color='green')
-  plt.show()
-
-def ms_to_datetime(data: pd.DataFrame, column: str, timezone = 'Europe/Madrid'):
-  return pd.DatetimeIndex(pd.to_datetime(data[column], unit='ms')).tz_localize('UTC').tz_convert(timezone)
-
 if __name__ == "__main__":
-  if not exists_data(DATA_FILE):
-    load_api_client()
-    save_data(DATA_FILE, get_data())
+  if not exists_data():
+    save_data(get_data())
 
   data = load_data(DATA_FILE, ['close_time', 'close'])
 
-  plot_data(data)
+  from visualization import plot_data
+
+  plot_data(data, SYMBOL)
