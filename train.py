@@ -6,11 +6,9 @@ import matplotlib.pyplot as plt
 from sklearn.preprocessing import StandardScaler
 from sklearn.feature_selection import SelectKBest
 from sklearn.feature_selection import chi2
-
-from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier, GradientBoostingClassifier
+from sklearn.model_selection import GridSearchCV, ShuffleSplit
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, ExtraTreesClassifier, VotingClassifier
 from sklearn.metrics import accuracy_score
-from sklearn.svm import SVC
-from sklearn.tree import DecisionTreeClassifier
 
 from scipy.stats import truncnorm
 
@@ -18,6 +16,11 @@ from data import *
 
 # Number of bars ahead to predict (5 minutes)
 LOOKAHEAD = 5 if INTERVAL == '1m' else 1
+
+# Number of bars to save for each row
+LOOKBEHIND = 20
+
+FEATURE_COLUMNS = ['close', 'volume', 'close_time']
 
 def get_dataset(data: pd.DataFrame, columns: list[str] = None) -> tuple[pd.DataFrame, np.ndarray]:
   """
@@ -27,27 +30,45 @@ def get_dataset(data: pd.DataFrame, columns: list[str] = None) -> tuple[pd.DataF
   """
   X_data = data if columns is None else data[columns]
 
-  X = X_data.iloc[:-LOOKAHEAD]
+  X = X_data.iloc[LOOKBEHIND:-LOOKAHEAD]
   Y = []
+
+  if X.empty:
+    error("Not enough data")
   
   close_prices = data['close'].values
 
-  for t in range(len(X)):
+  X_lookbehind = []
+  
+  for t in range(LOOKBEHIND, len(X) + LOOKBEHIND):
     Y.append(1 if close_prices[t + LOOKAHEAD] > close_prices[t] else 0)
+    X_lookbehind.append(close_prices[t - LOOKBEHIND:t])
 
+  lookbehind_columns = list(map(lambda i: f't-{i}', range(LOOKBEHIND, 0, -1)))
+  X_lookbehind = pd.DataFrame(np.array(X_lookbehind), columns=lookbehind_columns, index=X.index)
+  
+  X = pd.concat([X_lookbehind, X], axis=1)
   Y = np.array(Y)
   
   return X, Y
 
-def preview_dataset(data: pd.DataFrame, X: pd.DataFrame, Y: np.ndarray, preview_bars: int = 10):
+def get_Y_preview(data: pd.DataFrame, Y: np.ndarray, preview_bars: int = 10):
+  preview_bars = min(preview_bars, len(Y) // LOOKAHEAD) if len(Y) >= LOOKAHEAD else 1
   start_index = preview_bars * LOOKAHEAD
-  X_preview = X.iloc[-start_index::LOOKAHEAD]
   Y_preview = Y[-start_index::LOOKAHEAD]
   Y_dates = ms_to_datetime(data, 'open_time')[-LOOKAHEAD-start_index:-LOOKAHEAD:LOOKAHEAD]
 
-  for i in range(len(Y_preview)):
-    print(f"{Y_dates[i]} -> {'BUY' if Y_preview[i] else 'SELL'}")
-    print(X_preview.iloc[[i]])
+  return Y_preview, Y_dates, start_index
+
+def preview_dataset(data: pd.DataFrame, X: pd.DataFrame, Y: np.ndarray, preview_bars: int = 10):
+  Y_preview, Y_dates, start_index = get_Y_preview(data, Y, preview_bars)
+  X_preview = pd.DataFrame(X.iloc[-start_index::LOOKAHEAD])
+
+  X_preview['open_time'] = Y_dates
+  X_preview['Y'] = Y_preview
+  
+  print('Preview dataset')
+  print(X_preview)
 
   plt.scatter(Y_dates, Y_preview, c=Y_preview, cmap='RdYlGn')
   plt.title("Preview dataset: BULL / BEAR")
@@ -60,31 +81,34 @@ def display_entries(label: str, Y: np.ndarray):
   print(f"Entries ({label}): {total}")
   print(f"BULL: {bulls} ({((bulls / total)*100):.2f}%) | BEAR: {bears} ({((bears / total)*100):.2f}%)")
 
-FEATURE_COLUMNS = ['close_time', 'close', 'volume']
-
 def preprocess(data: pd.DataFrame):
+  global FEATURE_COLUMNS
   print("Preprocessing data...")
 
   X, Y = get_dataset(data, columns=FEATURE_COLUMNS)
 
-  print(f"Features: {', '.join(X.columns.values)}")
+  # preview_dataset(data, X, Y)
 
-  total_features = len(X.columns)
-  kbest = SelectKBest(score_func=chi2, k=total_features)
+  top_features = min(10, len(X.columns))
+  kbest = SelectKBest(score_func=chi2, k=top_features)
   features_fit = kbest.fit(X, Y)
   feature_scores = pd.concat([pd.DataFrame(X.columns), pd.DataFrame(features_fit.scores_)], axis=1)
   feature_scores.columns = ['Column', 'Score']
-  print(feature_scores.nlargest(total_features, 'Score'))
+  feature_scores = feature_scores.nlargest(top_features, 'Score')
+  if not feature_scores.empty:
+    print("Most relevant features")
+    print(feature_scores)
 
-  labeled_data = pd.concat([X, pd.DataFrame(Y, columns=['Bet'])], axis=1)
-  correlation = labeled_data.corr()
-  correlated_features = correlation.index
-  sns.heatmap(labeled_data[correlated_features].corr(), annot=True, cmap="RdYlGn")
-  plt.show()
-
-  preview_dataset(data, X, Y)
+  if len(X.columns) < 10:
+    labeled_data = pd.concat([X, pd.DataFrame(Y, columns=['Y'], index=X.index)], axis=1)
+    correlation = labeled_data.corr()
+    sns.heatmap(correlation, annot=True, cmap="RdYlGn")
+    plt.show()
 
   display_entries('Total', Y)
+
+  FEATURE_COLUMNS = X.columns.values
+  print(f"Features: {', '.join(FEATURE_COLUMNS)}")
 
   split_at = int(len(X)*0.8) # 80% training, 20% test
 
@@ -96,17 +120,34 @@ def preprocess(data: pd.DataFrame):
 
   return X_train, Y_train, X_test, Y_test
 
-def train(classifier, X_train, Y_train, X_test, Y_test):
+def train(classifier, X_train, Y_train, X_test, Y_test, search = False):
   print(f"Training model with {type(classifier).__name__}...")
+
+  if search:
+    search_params = {
+      'n_estimators': [100, 500],
+      'min_weight_fraction_leaf': [0, 0.05, 0.2],
+      'max_depth': [1, 2, 20, None]
+    }
+
+    # cv = [(slice(None), slice(None))] # no fold
+    cv = ShuffleSplit(test_size=0.2, n_splits=1) # 1 fold
+    classifier = GridSearchCV(classifier, search_params, cv=cv, n_jobs=-1, verbose=3)
 
   classifier.fit(X_train, Y_train)
 
+  if search:
+    print(classifier.best_params_)
+    # print(classifier.best_estimator_)
+
   print("Model trained")
 
-  print("Feature importances:")
-  print(classifier.feature_importances_)
-  pd.Series(classifier.feature_importances_, index=FEATURE_COLUMNS).plot(kind='barh')
-  plt.show()
+  if hasattr(classifier, 'feature_importances_'):
+    feature_importances = pd.Series(classifier.feature_importances_, index=FEATURE_COLUMNS).sort_values(ascending=False)
+    print(feature_importances)
+    # feature_importances.plot(kind='barh')
+    # plt.title("Feature importances")
+    # plt.show()
 
   Y_train_pred = classifier.predict(X_train)
 
@@ -115,6 +156,8 @@ def train(classifier, X_train, Y_train, X_test, Y_test):
   Y_test_pred = classifier.predict(X_test)
 
   accuracy('Test', Y_test, Y_test_pred)
+  
+  display_entries('Test', Y_test_pred)
 
   return Y_test_pred
 
@@ -124,10 +167,8 @@ def accuracy(title, Y, Y_pred) -> float:
   return score
 
 def preview_prediction(data, Y_title, Y, Y_pred_title, Y_pred, preview_bars: int = 10):
-  start_index = preview_bars * LOOKAHEAD
-  Y_preview = Y[-start_index::LOOKAHEAD]
+  Y_preview, Y_dates, start_index = get_Y_preview(data, Y, preview_bars)
   Y_pred_preview = Y_pred[-start_index::LOOKAHEAD]
-  Y_dates = ms_to_datetime(data, 'open_time')[-LOOKAHEAD-start_index:-LOOKAHEAD:LOOKAHEAD]
 
   for i in range(len(Y_preview)):
     print(f"{Y_dates[i]} -> {'BUY' if Y_pred_preview[i] else 'SELL'} ({'success' if Y_preview[i] == Y_pred_preview[i] else 'fail'})")
@@ -208,18 +249,15 @@ if __name__ == "__main__":
   Y_test_pred_random = random_prediction(Y_test)
 
   # Classifiers
-  max_depth = 20
-  n_estimators = 500
-  RANDOM_FOREST = RandomForestClassifier(max_depth=max_depth, n_estimators=n_estimators)
-  GRADIENT_BOOST = GradientBoostingClassifier(max_depth=max_depth, n_estimators=n_estimators)
-  ADA_BOOST = AdaBoostClassifier(DecisionTreeClassifier(max_depth=max_depth), n_estimators=n_estimators)
-  SVM = SVC()
+  RANDOM_FOREST = RandomForestClassifier(n_estimators=500)
+  EXTRA_RANDOM_FOREST = ExtraTreesClassifier(n_estimators=500)
+  GRADIENT_BOOST = GradientBoostingClassifier(n_estimators=100, max_depth=20)
+  classifiers = [('Random Forest', RANDOM_FOREST), ('Gradient Boosting', GRADIENT_BOOST), ('Extra', EXTRA_RANDOM_FOREST)]
+  MIXED = VotingClassifier(classifiers, voting='hard', n_jobs=-1, verbose=True)
 
-  for classifier in [RANDOM_FOREST]:
+  for classifier in [MIXED]:
     Y_test_pred = train(classifier, X_train, Y_train, X_test, Y_test)
 
-    display_entries('Test', Y_test_pred)
-
-    preview_prediction(data, 'Y_test', Y_test, 'Y_test_pred', Y_test_pred)
+    # preview_prediction(data, 'Y_test', Y_test, 'Y_test_pred', Y_test_pred)
 
     compare_to_random(classifier, Y_test, Y_test_pred, Y_test_pred_random)

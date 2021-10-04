@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 from binance.client import Client
 
 DATA_PATH = Path('data')
-LENGTH = '7 day'
+LENGTH = '1 month'
 INTERVAL = Client.KLINE_INTERVAL_1MINUTE
 DATA_FILE = f"bnbusdt_{LENGTH.replace(' ', '_')}_{INTERVAL}"
 
