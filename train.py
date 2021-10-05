@@ -6,7 +6,7 @@ from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier,
 from data import exists_data, get_data, save_data, load_data
 from classifier import Dataset, Classifier, RandomClassifier, SklearnClassifier, GridSearchClassifier
 from visualization import display_entries, preview_prediction, plot_balances
-from settings import START_BALANCE, BET, TRANSACTION_FEE, PRIZE_FEE, random_payout
+from settings import START_BALANCE, TRANSACTION_FEE, PRIZE_FEE, random_payout, get_bet
 
 import preprocess
 
@@ -30,6 +30,8 @@ def search(classifier: Union[ClassifierMixin, SklearnClassifier]) -> Classifier:
   return classifier
 
 def compare_classifiers(dataset: Dataset, classifiers: list[Classifier]):
+  print()
+  
   balances = dict(map(lambda classifier: (classifier, [START_BALANCE]), classifiers))
 
   Y_test = dataset.Y_test
@@ -38,20 +40,22 @@ def compare_classifiers(dataset: Dataset, classifiers: list[Classifier]):
   for r in range(len(Y_test)):
     payout = random_payout() # winner multiplier
 
+    bet = get_bet(payout)
+
     for classifier in classifiers:
       balance_history = balances[classifier]
-      balance = balance_history[-1] - BET - TRANSACTION_FEE
+      balance = balance_history[-1] - bet - TRANSACTION_FEE
 
       if classifier.Y_pred[r] == Y_test[r]:
-        prize = BET * (payout - 1)
-        balance += BET + (prize * (1 - PRIZE_FEE))
+        prize = bet * (payout - 1)
+        balance += bet + (prize * (1 - PRIZE_FEE))
       
       balance_history.append(balance)
   
   # final results
   for classifier in classifiers:
     final_balance = balances[classifier][-1]
-    print(f"{classifier} final balance: {final_balance:.3f} ({((final_balance - START_BALANCE)*100):.2f}%)")
+    print(f"{classifier} final balance: {final_balance:.3f} ({((final_balance/START_BALANCE - 1)*100):.2f}%)")
 
   plot_balances(balances, START_BALANCE)
 

@@ -1,3 +1,5 @@
+import math
+
 from scipy.stats import truncnorm
 
 def error(message: str):
@@ -9,3 +11,14 @@ def truncated_normal_generator(mean = 0, sd = 1, lower = -1, upper = 1):
   def get(size = None) -> float:
     return generator.rvs(size)
   return get
+
+def try_float(f: str) -> float:
+  try:
+    if ',' in f:
+      f = f.replace(',', '.')
+    return float(f)
+  except ValueError:
+    return math.nan
+
+def is_nan(f: float) -> bool:
+  return math.isnan(f)
