@@ -111,6 +111,8 @@ def get_dataset(data: pd.DataFrame, preview: bool = True, best_features: bool = 
 
   if preview:
     preview_dataset(data, dataset, plot=False, preview_bars=None)
+  
+  dataset.train_test_split(normalize=True)
 
   if best_features:
     dataset.best_features()
@@ -119,7 +121,5 @@ def get_dataset(data: pd.DataFrame, preview: bool = True, best_features: bool = 
     plot_correlation_matrix(dataset)
 
   display_entries('Total', dataset.Y)
-
-  dataset.train_test_split(normalize=True)
 
   return dataset

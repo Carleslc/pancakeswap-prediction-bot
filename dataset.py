@@ -45,15 +45,14 @@ class Dataset:
 
     if normalize:
       scaler = StandardScaler()
-      scaler.fit(self.X)
-      self.X_train = scaler.transform(self.X_train)
+      self.X_train = scaler.fit_transform(self.X_train)
       self.X_test = scaler.transform(self.X_test)
   
   def best_features(self, top_features: int = 10) -> pd.DataFrame:
     top_features = min(10, len(self.features))
     
     kbest = SelectKBest(score_func=f_classif, k=top_features)
-    features_fit = kbest.fit(self.X, self.Y)
+    features_fit = kbest.fit(self.X_train, self.Y_train)
     feature_scores = pd.concat([pd.DataFrame(self.features), pd.DataFrame(features_fit.scores_)], axis=1)
     feature_scores.columns = ['Feature', 'Score']
     feature_scores = feature_scores.nlargest(top_features, 'Score')
