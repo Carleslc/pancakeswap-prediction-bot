@@ -5,13 +5,14 @@ import pandas as pd
 
 from sklearn.preprocessing import StandardScaler
 from sklearn.feature_selection import SelectKBest
-from sklearn.feature_selection import chi2
+from sklearn.feature_selection import f_classif # alternative: chi2
 
 class Dataset:
 
   def __init__(self, X: pd.DataFrame, Y: ArrayLike = None):
     self.X = X
     self.Y = np.array(Y) if Y is not None else None
+    self.new_columns = []
   
   @property
   def features(self):
@@ -25,11 +26,13 @@ class Dataset:
   
   def add_column(self, name: str, values: ArrayLike):
     self.X[name] = values
+    self.new_columns.append(name)
   
   def add_columns(self, names: list[str], values: list[ArrayLike], prepend: bool = False):
     new_columns = pd.DataFrame(np.array(values), columns=names, index=self.X.index)
     new_X = [new_columns, self.X] if prepend else [self.X, new_columns]
     self.X = pd.concat(new_X, axis=1)
+    self.new_columns.extend(names)
   
   def train_test_split(self, train_percentage: float = 0.8, normalize: bool = True):
     split_at = int(len(self.X)*train_percentage)
@@ -49,7 +52,7 @@ class Dataset:
   def best_features(self, top_features: int = 10) -> pd.DataFrame:
     top_features = min(10, len(self.features))
     
-    kbest = SelectKBest(score_func=chi2, k=top_features)
+    kbest = SelectKBest(score_func=f_classif, k=top_features)
     features_fit = kbest.fit(self.X, self.Y)
     feature_scores = pd.concat([pd.DataFrame(self.features), pd.DataFrame(features_fit.scores_)], axis=1)
     feature_scores.columns = ['Feature', 'Score']
@@ -63,3 +66,12 @@ class Dataset:
 
   def correlation_matrix(self) -> pd.DataFrame:
     return self.labeled_data.corr()
+
+  def __str__(self) -> str:
+    return str(self.labeled_data)
+
+  def __len__(self) -> int:
+    return len(self.X)
+  
+  def __getitem__(self, key: str):
+    return self.X[key]

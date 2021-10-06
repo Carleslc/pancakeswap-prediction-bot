@@ -3,7 +3,9 @@ from typing import Union
 from abc import ABC, abstractmethod
 
 from sklearn.base import ClassifierMixin
+from sklearn.exceptions import NotFittedError
 from sklearn.model_selection import GridSearchCV, ShuffleSplit
+from sklearn.utils.validation import check_is_fitted
 from sklearn.metrics import accuracy_score
 
 from dataset import Dataset
@@ -17,7 +19,7 @@ class Classifier(ABC):
   def __init__(self, name: str):
     self.name = name
 
-  def train(self, dataset: Dataset) -> np.ndarray:
+  def train(self, dataset: Dataset):
     print(f"\nTraining {self.name}...")
 
     self.dataset = dataset
@@ -25,6 +27,9 @@ class Classifier(ABC):
     self._fit()
 
     print(f"{self.name} trained")
+  
+  def test(self, dataset: Dataset) -> np.ndarray:
+    self.dataset = dataset
 
     self.predict(dataset.X_train)
     self.accuracy(dataset.Y_train, 'Training')
@@ -45,6 +50,10 @@ class Classifier(ABC):
   
   @abstractmethod
   def _predict(self, X) -> np.ndarray:
+    ...
+  
+  @abstractmethod
+  def probabilities(self, X) -> np.ndarray:
     ...
   
   def predict(self, X) -> np.ndarray:
@@ -69,10 +78,16 @@ class SklearnClassifier(Classifier):
     super().__init__(name or type(classifier).__name__)
   
   def _fit(self):
-    self.classifier.fit(self.dataset.X_train, self.dataset.Y_train)
+    try:
+      check_is_fitted(self.classifier)
+    except NotFittedError:
+      self.classifier.fit(self.dataset.X_train, self.dataset.Y_train)
   
   def _predict(self, X) -> np.ndarray:
     return self.classifier.predict(X)
+  
+  def probabilities(self, X) -> np.ndarray:
+    return self.classifier.predict_proba(X)
   
   def feature_importances(self, plot: bool = True, limit: int = 30):
     if hasattr(self.classifier, 'feature_importances_'):
@@ -117,7 +132,10 @@ class RandomClassifier(Classifier):
     super().__init__('RandomClassifier')
   
   def _fit(self):
-    pass
+    self.classes = sorted(set(self.dataset.Y_train))
   
   def _predict(self, X) -> np.ndarray:
-    return np.random.randint(0, 2, size=len(X)) # random values within [0, 2) aka [0,1]
+    return np.random.choice(self.classes, size=len(X))
+
+  def probabilities(self, X) -> np.ndarray:
+    return np.array([[1/len(self.classes)] * len(self.classes)] * len(X))

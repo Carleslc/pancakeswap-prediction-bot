@@ -5,6 +5,8 @@ DECIMALS = 4
 ADJUST_EXPECTED = 0.2
 BET_ON_EXPECTED = True
 
+# TODO: Get current data and sync blocks 5m
+
 if __name__ == "__main__":
   print("Input the payout to get the bet amount")
 

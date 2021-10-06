@@ -1,5 +1,4 @@
-from typing import Union, TYPE_CHECKING
-from numpy.typing import ArrayLike
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
@@ -26,14 +25,17 @@ def plot_data(data: pd.DataFrame, symbol: str):
   plt.show()
 
 def get_Y_preview(data: pd.DataFrame, Y: np.ndarray, preview_bars: int = 10):
-  preview_bars = min(preview_bars, len(Y) // LOOKAHEAD) if len(Y) >= LOOKAHEAD else 1
+  total_bars = len(Y)
+  if preview_bars is None:
+    preview_bars = total_bars
+  preview_bars = min(preview_bars, total_bars // LOOKAHEAD) if total_bars >= LOOKAHEAD else 1
   start_index = preview_bars * LOOKAHEAD
   Y_preview = Y[-start_index::LOOKAHEAD]
   Y_dates = ms_to_datetime(data, 'open_time')[-LOOKAHEAD-start_index:-LOOKAHEAD:LOOKAHEAD]
 
   return Y_preview, Y_dates, start_index
 
-def preview_dataset(data: pd.DataFrame, dataset: Dataset, preview_bars: int = 10):
+def preview_dataset(data: pd.DataFrame, dataset: Dataset, preview_bars: int = 10, plot: bool = True):
   Y_preview, Y_dates, start_index = get_Y_preview(data, dataset.Y, preview_bars)
   X_preview = pd.DataFrame(dataset.X.iloc[-start_index::LOOKAHEAD])
 
@@ -43,9 +45,10 @@ def preview_dataset(data: pd.DataFrame, dataset: Dataset, preview_bars: int = 10
   print('Preview dataset')
   print(X_preview)
 
-  plt.scatter(Y_dates, Y_preview, c=Y_preview, cmap='RdYlGn')
-  plt.title("Preview dataset: BULL / BEAR")
-  plt.show()
+  if plot:
+    plt.scatter(Y_dates, Y_preview, c=Y_preview, cmap='RdYlGn')
+    plt.title("Preview dataset: BULL / BEAR")
+    plt.show()
 
 def preview_prediction(data: pd.DataFrame, classifier: 'Classifier', Y_title: str, Y: np.ndarray, Y_pred_title: str, Y_pred: np.ndarray, preview_bars: int = 10):
   Y_preview, Y_dates, start_index = get_Y_preview(data, Y, preview_bars)
@@ -65,7 +68,7 @@ def plot_correlation_matrix(dataset: Dataset):
   plt.show()
 
 def plot_balances(balances: dict['Classifier', list[float]], start_balance: float):
-  plt.title("Performance")
+  plt.title("Classifiers Performance")
   plt.xlabel('#')
   plt.ylabel('Balance')
   plt.axhline(y=0, color='red', linestyle='-')

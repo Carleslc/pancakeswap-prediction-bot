@@ -7,3 +7,4 @@ selenium
 sklearn
 scipy
 seaborn
+xgboost
