@@ -67,8 +67,8 @@ def plot_correlation_matrix(dataset: Dataset):
   sns.heatmap(dataset.correlation_matrix(), annot=True, cmap="RdYlGn")
   plt.show()
 
-def plot_balances(balances: dict['Classifier', list[float]], start_balance: float):
-  plt.title("Classifiers Performance")
+def plot_balances(title: str, balances: dict['Classifier', list[float]], start_balance: float):
+  plt.title(title)
   plt.xlabel('#')
   plt.ylabel('Balance')
   plt.axhline(y=0, color='red', linestyle='-')

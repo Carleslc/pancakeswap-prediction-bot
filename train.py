@@ -1,16 +1,15 @@
-from typing import Union
+from typing import Union, Callable
 
 import numpy as np
 
 from sklearn.base import ClassifierMixin
-from sklearn.preprocessing import LabelEncoder
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, ExtraTreesClassifier, VotingClassifier
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, ExtraTreesClassifier
 from sklearn.svm import SVC
 
 from data import exists_data, get_data, save_data, load_data
-from classifier import Dataset, Classifier, RandomClassifier, SklearnClassifier, GridSearchClassifier
+from classifier import Dataset, Classifier, RandomClassifier, SklearnClassifier, GridSearchClassifier, MixedClassifier
 from visualization import display_entries, preview_prediction, plot_balances
-from settings import START_BALANCE, TRANSACTION_FEE, PRIZE_FEE, random_payout, get_bet
+from settings import START_BALANCE, TRANSACTION_FEE, PRIZE_FEE, random_payout, bet_same, bet_same_always, bet_greedy
 
 import preprocess
 
@@ -24,13 +23,11 @@ def search(classifier: Union[ClassifierMixin, SklearnClassifier]) -> Classifier:
     return GridSearchClassifier(classifier, search_params, cv=1, verbose=True)
   return classifier
 
-def compare_classifiers(dataset: Dataset, classifiers: list[Classifier], min_probability: float = 0.6, debug: bool = False):
-  print()
+def compare_classifiers(dataset: Dataset, classifiers: list[Classifier], bet_strategy: Callable[[float, float, Classifier], float] = bet_same_always, payouts: list[float] = None, verbose: bool = False):
+  title = f"Classifiers Performance ({bet_strategy.__name__})"
 
-  def debug(s: str):
-    if debug:
-      print(s)
-  
+  print(f'\n{title}')
+
   balances = dict(map(lambda classifier: (classifier, [START_BALANCE]), classifiers))
 
   for classifier in classifiers:
@@ -44,9 +41,10 @@ def compare_classifiers(dataset: Dataset, classifiers: list[Classifier], min_pro
 
   # for each round
   for r in range(len(Y_test)):
-    payout = random_payout() # winner multiplier
+    payout = payouts[r] if payouts is not None else random_payout() # winner multiplier
 
-    debug(f"#{r} x{payout:.2f}")
+    if verbose:
+      print(f"#{r + 1} x{payout:.2f}")
 
     for classifier in classifiers:
       balance_history = balances[classifier]
@@ -55,7 +53,7 @@ def compare_classifiers(dataset: Dataset, classifiers: list[Classifier], min_pro
       prediction = classifier.Y_pred[r]
       probability = classifier.Y_prob[r][prediction]
 
-      bet = get_bet(payout) if isinstance(classifier, RandomClassifier) or probability >= min_probability else 0
+      bet = bet_strategy(payout, probability, classifier)
 
       win = prediction == Y_test[r]
 
@@ -69,7 +67,8 @@ def compare_classifiers(dataset: Dataset, classifiers: list[Classifier], min_pro
           prize = bet * (payout - 1)
           balance += bet + (prize * (1 - PRIZE_FEE))
         
-        debug(f"{'UP' if prediction else 'DOWN'} {probability:.3f} {'SUCCESS' if win else 'FAIL'} ({classifier})")
+        if verbose:
+          print(f"{'UP' if prediction else 'DOWN'} {probability:.3f} {'SUCCESS' if win else 'FAIL'} ({classifier})")
       
       if win:
         classifier.Y_success_probs.append(probability)
@@ -87,13 +86,7 @@ def compare_classifiers(dataset: Dataset, classifiers: list[Classifier], min_pro
     print(f"{classifier} success mean probability: {np.mean(classifier.Y_success_probs):.3f}")
     print(f"{classifier} fail mean probability: {np.mean(classifier.Y_fail_probs):.3f}")
 
-  plot_balances(balances, START_BALANCE)
-
-def prefitted(voting_classifier: VotingClassifier, dataset: Dataset) -> VotingClassifier:
-  voting_classifier.estimators_ = list(map(lambda prefitted_classifier: prefitted_classifier[1], voting_classifier.estimators))
-  voting_classifier.le_ = LabelEncoder().fit(dataset.Y)
-  voting_classifier.classes_ = voting_classifier.le_.classes_
-  return voting_classifier
+  plot_balances(title, balances, START_BALANCE)
 
 if __name__ == "__main__":
   # Load data
@@ -107,27 +100,27 @@ if __name__ == "__main__":
 
   # Classifiers
   RANDOM = RandomClassifier()
-  SVM = SVC(probability=True)
   RANDOM_FOREST = RandomForestClassifier(n_estimators=500, criterion='entropy')
   EXTRA_RANDOM_FOREST = ExtraTreesClassifier(n_estimators=500)
-  GRADIENT_BOOST = GradientBoostingClassifier(n_estimators=100, max_depth=10)
+  GRADIENT_BOOST = GradientBoostingClassifier(n_estimators=500, n_iter_no_change=10)
+  SVM = SVC(probability=True)
   # TODO: XGBoost
 
-  mix_classifiers = [RANDOM_FOREST, GRADIENT_BOOST, EXTRA_RANDOM_FOREST, SVM]
-  mix_classifiers_tuples = list(map(lambda classifier: (type(classifier).__name__, classifier), mix_classifiers))
-  MIXED = VotingClassifier(mix_classifiers_tuples, voting='soft', n_jobs=-1, verbose=True, weights=[1, 0.75, 1.5, 0.75])
-
-  classifiers: list[Classifier] = [RANDOM, *map(SklearnClassifier, mix_classifiers)]
+  MIXED = MixedClassifier([
+      RANDOM_FOREST,
+      EXTRA_RANDOM_FOREST,
+      GRADIENT_BOOST,
+      SVM
+    ], 'VotingClassifier', voting='soft', weights=[1, 2, 0.75, 0.75], verbose=True)
 
   # Training
-  for classifier in classifiers:
+  for classifier in [RANDOM, MIXED]:
     classifier.train(dataset)
-
-  classifiers.append(SklearnClassifier(prefitted(MIXED, dataset)))
+  
+  classifiers: list[Classifier] = [RANDOM, *MIXED.classifiers, MIXED]
 
   for classifier in classifiers:
-    print()
-    print(classifier)
+    print(f'\n{classifier}')
     
     Y_test_pred = classifier.test(dataset)
 
@@ -138,4 +131,18 @@ if __name__ == "__main__":
     # if classifier is not RANDOM:
     #   preview_prediction(data, classifier, 'Y_test', classifier.dataset.Y_test, 'Y_pred', classifier.Y_pred)
 
-  compare_classifiers(dataset, classifiers, debug=True)
+  payouts = random_payout(len(dataset.Y_test))
+
+  compare_classifiers(dataset, classifiers, payouts=payouts, verbose=False)
+
+  def bet_min_prob(payout: float, probability: float, classifier: Classifier, min_probability: float = 0.6) -> float:
+    return bet_same(payout) if isinstance(classifier, RandomClassifier) or probability >= min_probability else 0
+  
+  compare_classifiers(dataset, classifiers, bet_min_prob, payouts)
+
+  def bet_min_prob_greedy(payout: float, probability: float, classifier: Classifier, min_probability: float = 0.6) -> float:
+    return bet_greedy(payout) if isinstance(classifier, RandomClassifier) or probability >= min_probability else 0
+
+  compare_classifiers(dataset, classifiers, bet_min_prob_greedy, payouts)
+
+  compare_classifiers(dataset, classifiers, bet_same, payouts)

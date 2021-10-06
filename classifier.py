@@ -4,7 +4,9 @@ from abc import ABC, abstractmethod
 
 from sklearn.base import ClassifierMixin
 from sklearn.exceptions import NotFittedError
+from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import GridSearchCV, ShuffleSplit
+from sklearn.ensemble import VotingClassifier
 from sklearn.utils.validation import check_is_fitted
 from sklearn.metrics import accuracy_score
 
@@ -98,6 +100,13 @@ class SklearnClassifier(Classifier):
 
         if plot:
           plot_barh(self.feature_importances, title=f"Feature importances ({self.name})")
+  
+def unwrap(classifier: Union[ClassifierMixin, SklearnClassifier]):
+  if isinstance(classifier, SklearnClassifier):
+    return classifier.classifier
+  elif isinstance(classifier, ClassifierMixin):
+    return classifier
+  raise TypeError(f"Expected ClassifierMixin or SklearnClassifier but found {type(classifier).__name__}")
 
 class GridSearchClassifier(SklearnClassifier):
 
@@ -110,12 +119,7 @@ class GridSearchClassifier(SklearnClassifier):
     self.params = params
     self.verbose = verbose
 
-    if isinstance(classifier, SklearnClassifier):
-      classifier = classifier.classifier
-    elif not isinstance(classifier, ClassifierMixin):
-      raise TypeError(f"Expected SklearnClassifier but found {type(classifier).__name__}")
-
-    grid_classifier = GridSearchCV(classifier, params, cv=cv, n_jobs=-1 if parallel else None, verbose=3 if verbose else 0)
+    grid_classifier = GridSearchCV(unwrap(classifier), params, cv=cv, n_jobs=-1 if parallel else None, verbose=3 if verbose else 0)
 
     super().__init__(grid_classifier, f'{self.__class__.__name__} ({classifier.__class__.__name__})')
   
@@ -123,8 +127,32 @@ class GridSearchClassifier(SklearnClassifier):
     super()._fit()
 
     if self.verbose:
+      print(self.classifier.best_params_)
       print(self.classifier.best_estimator_)
-      # print(self.classifier.best_params_)
+
+class MixedClassifier(SklearnClassifier):
+
+  def __init__(self, classifiers: list[Union[ClassifierMixin, SklearnClassifier]], name: str = None, voting: str = 'hard', weights: list[float] = None, prefit: bool = False, verbose: bool = False):
+    estimators = list(map(lambda classifier: (type(classifier).__name__, unwrap(classifier)), classifiers))
+
+    voting_classifier = VotingClassifier(estimators, voting=voting, weights=weights, verbose=verbose, n_jobs=-1)
+
+    if prefit:
+      voting_classifier.estimators_ = list(map(unwrap, classifiers))
+      voting_classifier.le_ = LabelEncoder().fit(classifiers[0].dataset.Y) # classifiers[0] must be a trained SklearnClassifier
+      voting_classifier.classes_ = voting_classifier.le_.classes_
+
+    super().__init__(voting_classifier, name)
+  
+  def _fit(self):
+    super()._fit()
+
+    self.classifiers = []
+
+    for estimator in self.classifier.estimators_:
+      classifier = SklearnClassifier(estimator)
+      classifier.dataset = self.dataset
+      self.classifiers.append(classifier)
 
 class RandomClassifier(Classifier):
 

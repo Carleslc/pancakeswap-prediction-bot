@@ -1,5 +1,5 @@
 from utils import try_float, is_nan
-from settings import get_bet_greedy
+from settings import bet_greedy as get_bet
 
 DECIMALS = 4
 ADJUST_EXPECTED = 0.2
@@ -19,7 +19,7 @@ if __name__ == "__main__":
         print(f"Expected: {round(payout, 2)}")
 
       if not is_nan(payout):
-        bet = get_bet_greedy(payout)
+        bet = get_bet(payout)
         print(f'BET {round(bet, DECIMALS)}')
       else:
         print('NaN')
