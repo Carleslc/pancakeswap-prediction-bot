@@ -19,8 +19,9 @@ FEATURE_COLUMNS = ['high', 'low', 'close', 'volume']
 # History to save for each row
 RSI_W = 14
 BB_W = 20
-LOOKBEHIND_ROWS = [LOOKAHEAD]
-LOOKBEHIND = max(LOOKBEHIND_ROWS, default=0) + max(RSI_W, BB_W)
+LOOKBEHIND_ROWS = list(range(2 * LOOKAHEAD, 0, -1))
+LOOKBEHIND_ROWS_DIFF = [2 * LOOKAHEAD, LOOKAHEAD]
+LOOKBEHIND = max(max(LOOKBEHIND_ROWS), max(LOOKBEHIND_ROWS_DIFF)) + max(RSI_W, BB_W)
 
 def build_dataset(data: pd.DataFrame) -> Dataset:
   """
@@ -43,7 +44,8 @@ def build_dataset(data: pd.DataFrame) -> Dataset:
   add_time(dataset)
   add_price_diff(dataset)
   add_technical_indicators(dataset)
-  add_historical_data(dataset)
+  add_historical_data(dataset, ['high', 'low', 'close', 'volume', 'rsi', 'bb_p', 'bb_w', 'vwap_diff'], LOOKBEHIND_ROWS_DIFF, diff=True)
+  add_historical_data(dataset, ['change'], LOOKBEHIND_ROWS)
 
   dataset.X = dataset.X[FEATURE_COLUMNS + dataset.new_columns].iloc[LOOKBEHIND:-LOOKAHEAD]
   
@@ -126,8 +128,8 @@ def add_technical_indicators(dataset: Dataset, all: bool = False):
     dataset['bb_w'] = bb.bollinger_wband() # BandWidth
     dataset['bb_p'] = bb.bollinger_pband() # %B
 
-def add_historical_data(dataset: Dataset, columns: list[str] = ['high', 'low', 'close', 'volume', 'rsi', 'bb_p', 'bb_w', 'vwap_diff']):
-  if not len(LOOKBEHIND_ROWS):
+def add_historical_data(dataset: Dataset, columns: list[str], lookbehind: list[int] = LOOKBEHIND_ROWS, diff: bool = False):
+  if not len(lookbehind):
     return
 
   def add_column_lookbehind(column: str, label: str):
@@ -138,20 +140,21 @@ def add_historical_data(dataset: Dataset, columns: list[str] = ['high', 'low', '
     for t in range(len(dataset)):
       t_lookbehind = []
 
-      for r in LOOKBEHIND_ROWS:
-        if t < r:
+      for r in lookbehind:
+        if t - r < 0:
           value = np.nan
         else:
-          prev = values[t - r]
-          value = values[t] / prev - 1 if prev != 0 else 0
+          value = values[t - r]
+          if diff:
+            value = values[t] / value - 1 if value != 0 else values[t]
         
         t_lookbehind.append(value)
       
       X_lookbehind.append(t_lookbehind)
     
-    lookbehind_columns = list(map(lambda i: f'{label}-{i}', LOOKBEHIND_ROWS))
+    lookbehind_columns = list(map(lambda i: f'{label}-{i}', lookbehind))
 
-    dataset.add_columns(lookbehind_columns, X_lookbehind, prepend=True)
+    dataset[lookbehind_columns] = X_lookbehind
 
   for column in columns:
     add_column_lookbehind(column, column)
