@@ -1,20 +1,26 @@
 import numpy as np
 import pandas as pd
 
-from utils import error
+from numba import jit
+from ta import add_all_ta_features
+from ta.volatility import BollingerBands
+from ta.momentum import rsi
+from ta.others import daily_return
 
 from dataset import Dataset
 from settings import LOOKAHEAD
 from visualization import display_entries, preview_dataset, plot_correlation_matrix
 
-from datetime import datetime
+from utils import error, datetime_from_ms
 
 # Columns to use for training
-FEATURE_COLUMNS = ['close', 'volume']
+FEATURE_COLUMNS = ['high', 'low', 'close', 'volume']
 
 # History to save for each row
-LOOKBEHIND_ROWS = [30, 5, 1]
-LOOKBEHIND = max(LOOKBEHIND_ROWS, default=0)
+RSI_W = 14
+BB_W = 20
+LOOKBEHIND_ROWS = [LOOKAHEAD]
+LOOKBEHIND = max(LOOKBEHIND_ROWS, default=0) + max(RSI_W, BB_W)
 
 def build_dataset(data: pd.DataFrame) -> Dataset:
   """
@@ -36,11 +42,17 @@ def build_dataset(data: pd.DataFrame) -> Dataset:
 
   add_time(dataset)
   add_price_diff(dataset)
+  add_technical_indicators(dataset)
   add_historical_data(dataset)
 
   dataset.X = dataset.X[FEATURE_COLUMNS + dataset.new_columns].iloc[LOOKBEHIND:-LOOKAHEAD]
   
   return dataset
+
+def dataset_days(dataset: Dataset) -> int:
+  open_time = dataset['open_time'].values
+  datetime_diff = datetime_from_ms(open_time[-1]) - datetime_from_ms(open_time[0])
+  return datetime_diff.days + 1
 
 def add_time(dataset: Dataset):
   days = []
@@ -48,14 +60,18 @@ def add_time(dataset: Dataset):
   day_minutes = []
 
   for time in dataset['close_time']:
-    time = datetime.fromtimestamp(time/1000)
+    time = datetime_from_ms(time)
     days.append(time.day)
     weekdays.append(time.weekday())
     day_minutes.append(60*time.hour + time.minute)
 
-  dataset.add_column('day', days)
-  dataset.add_column('weekday', weekdays)
-  dataset.add_column('day_minute', day_minutes)
+  total_days = dataset_days(dataset)
+
+  if total_days >= 7:
+    dataset['day'] = days
+    dataset['weekday'] = weekdays
+  
+  dataset['day_minute'] = day_minutes
 
 def add_price_diff(dataset: Dataset):
   close_price = dataset['close']
@@ -63,8 +79,14 @@ def add_price_diff(dataset: Dataset):
   high = dataset['high']
   low = dataset['low']
 
+  dataset['change'] = daily_return(close_price)
   price_diff = close_price - open_price
-  price_range = high - low
+  # dataset['price_diff'] = price_diff
+
+  hlc3 = (high + low + close_price) / 3
+  # dataset['hlc3'] = (high + low + close_price) / 3
+  # dataset['ohlc4'] = (open_price + high + low + close_price) / 4
+  dataset['vwap_diff'] = vwap(hlc3.values, dataset['volume'].values) - hlc3
 
   high_shadow = []
   low_shadow = []
@@ -72,14 +94,40 @@ def add_price_diff(dataset: Dataset):
   for t in range(len(dataset)):
     high_shadow.append(high[t] - max(open_price[t], close_price[t]))
     low_shadow.append(min(open_price[t], close_price[t]) - low[t])
+  
+  height = high - low
+  # dataset['height'] = height
+  dataset['body_%'] = np.abs(price_diff / height)
 
-  dataset.add_column('price_diff', price_diff)
-  dataset.add_column('price_range', price_range)
-  dataset.add_column('high_shadow', high_shadow)
-  dataset.add_column('low_shadow', low_shadow)
+  # dataset['high_shadow'] = high_shadow
+  dataset['high_shadow_%'] = np.abs(high_shadow / height)
+  # dataset['low_shadow'] = low_shadow
+  dataset['low_shadow_%'] = np.abs(low_shadow / height)
 
-def add_historical_data(dataset: Dataset, columns: list[str] = ['close', 'volume', 'price_diff', 'price_range']):
-  if not LOOKBEHIND:
+@jit
+def vwap(typical_price: np.ndarray, volume: np.ndarray):
+  return np.cumsum(volume * typical_price) / np.cumsum(volume)
+
+def add_technical_indicators(dataset: Dataset, all: bool = False):
+  if all:
+    before_ta_features = len(dataset.features)
+    add_all_ta_features(dataset.X, open='open', close='close', high='high', low='low', volume='volume', fillna=True)
+    dataset.new_columns.extend(dataset.features[before_ta_features + 1:])
+  else:
+    close = dataset['close']
+    
+    dataset['rsi'] = rsi(close, window=RSI_W)
+
+    # https://technical-analysis-library-in-python.readthedocs.io/en/latest/ta.html?highlight=bollinger#ta.volatility.BollingerBands
+    bb = BollingerBands(close, window=BB_W, window_dev=2)
+    dataset['bb_m'] = bb.bollinger_mavg()
+    # dataset['bb_h'] = bb.bollinger_hband()
+    # dataset['bb_l'] = bb.bollinger_lband()
+    dataset['bb_w'] = bb.bollinger_wband() # BandWidth
+    dataset['bb_p'] = bb.bollinger_pband() # %B
+
+def add_historical_data(dataset: Dataset, columns: list[str] = ['high', 'low', 'close', 'volume', 'rsi', 'bb_p', 'bb_w', 'vwap_diff']):
+  if not len(LOOKBEHIND_ROWS):
     return
 
   def add_column_lookbehind(column: str, label: str):
@@ -91,7 +139,13 @@ def add_historical_data(dataset: Dataset, columns: list[str] = ['close', 'volume
       t_lookbehind = []
 
       for r in LOOKBEHIND_ROWS:
-        t_lookbehind.append(values[t - r] if t >= r else np.nan)
+        if t < r:
+          value = np.nan
+        else:
+          prev = values[t - r]
+          value = values[t] / prev - 1 if prev != 0 else 0
+        
+        t_lookbehind.append(value)
       
       X_lookbehind.append(t_lookbehind)
     
@@ -112,12 +166,12 @@ def get_dataset(data: pd.DataFrame, preview: bool = True, best_features: bool = 
   if preview:
     preview_dataset(data, dataset, plot=False, preview_bars=None)
   
-  dataset.train_test_split(normalize=True)
+  dataset.train_test_split()
 
   if best_features:
     dataset.best_features()
 
-  if correlation_matrix:
+  if correlation_matrix and len(dataset.features) <= 30:
     plot_correlation_matrix(dataset)
 
   display_entries('Total', dataset.Y)

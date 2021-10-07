@@ -14,6 +14,10 @@ if TYPE_CHECKING:
 def ms_to_datetime(data: pd.DataFrame, column: str, timezone = TIMEZONE):
   return pd.DatetimeIndex(pd.to_datetime(data[column], unit='ms')).tz_localize('UTC').tz_convert(timezone)
 
+def plt_show_non_blocking():
+  plt.draw()
+  plt.pause(0.001)
+
 def plot_data(data: pd.DataFrame, symbol: str):
   data['close_time'] = ms_to_datetime(data, 'close_time')
 

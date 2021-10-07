@@ -1,3 +1,5 @@
+from numpy.random import RandomState
+
 from api import Binance
 from utils import truncated_normal_generator
 
@@ -19,7 +21,9 @@ BET = START_BALANCE / MAX_CONSECUTIVE_LOSSES
 PRIZE_FEE = 0.03
 TRANSACTION_FEE = 0.001
 
-random_payout = truncated_normal_generator(mean=1.98, sd=0.4, lower=1.1, upper=10)
+RANDOM_STATE = RandomState(42)
+
+random_payout = truncated_normal_generator(mean=1.98, sd=0.4, lower=1.1, upper=10, random_state=RANDOM_STATE)
 
 def bet_greedy(payout: float = 2, probability: float = 1, _ = None) -> float:
   if payout <= 1/probability:

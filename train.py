@@ -9,7 +9,7 @@ from sklearn.svm import SVC
 from data import exists_data, get_data, save_data, load_data
 from classifier import Dataset, Classifier, RandomClassifier, SklearnClassifier, GridSearchClassifier, MixedClassifier
 from visualization import display_entries, preview_prediction, plot_balances
-from settings import START_BALANCE, TRANSACTION_FEE, PRIZE_FEE, random_payout, bet_same, bet_same_always, bet_greedy
+from settings import RANDOM_STATE, START_BALANCE, TRANSACTION_FEE, PRIZE_FEE, random_payout, bet_same, bet_same_always, bet_greedy
 
 import preprocess
 
@@ -88,6 +88,10 @@ def compare_classifiers(dataset: Dataset, classifiers: list[Classifier], bet_str
 
   plot_balances(title, balances, START_BALANCE)
 
+def compare_classifiers_bet_strategies(dataset: Dataset, classifiers: list[Classifier], bet_strategies: list[Callable[[float, float, Classifier], float]], payouts: list[float] = None, verbose: bool = False):
+  for bet_strategy in bet_strategies:
+    compare_classifiers(dataset, classifiers, bet_strategy, payouts=payouts, verbose=verbose)
+
 if __name__ == "__main__":
   # Load data
   if not exists_data():
@@ -96,27 +100,27 @@ if __name__ == "__main__":
   data = load_data()
 
   # Prepare data for training
-  dataset = preprocess.get_dataset(data, preview=True, correlation_matrix=False)
+  dataset = preprocess.get_dataset(data, preview=True, correlation_matrix=True)
 
   # Classifiers
-  RANDOM = RandomClassifier()
-  RANDOM_FOREST = RandomForestClassifier(n_estimators=500, criterion='entropy')
-  EXTRA_RANDOM_FOREST = ExtraTreesClassifier(n_estimators=500)
-  GRADIENT_BOOST = GradientBoostingClassifier(n_estimators=500, n_iter_no_change=10)
-  SVM = SVC(probability=True)
+  RANDOM = RandomClassifier(random_state=RANDOM_STATE)
+  RANDOM_FOREST = RandomForestClassifier(n_estimators=500, criterion='entropy', random_state=RANDOM_STATE)
+  EXTRA_RANDOM_FOREST = ExtraTreesClassifier(n_estimators=500, random_state=RANDOM_STATE)
+  GRADIENT_BOOST = GradientBoostingClassifier(n_estimators=500, n_iter_no_change=50, random_state=RANDOM_STATE)
+  SVM = SklearnClassifier(SVC(probability=True, random_state=RANDOM_STATE))
   # TODO: XGBoost
 
   MIXED = MixedClassifier([
       RANDOM_FOREST,
       EXTRA_RANDOM_FOREST,
-      GRADIENT_BOOST,
-      SVM
-    ], 'VotingClassifier', voting='soft', weights=[1, 2, 0.75, 0.75], verbose=True)
+      GRADIENT_BOOST
+    ], 'VotingClassifier', voting='soft', weights=[1, 2, 0.5], verbose=True)
 
   # Training
   for classifier in [RANDOM, MIXED]:
     classifier.train(dataset)
   
+  # Testing
   classifiers: list[Classifier] = [RANDOM, *MIXED.classifiers, MIXED]
 
   for classifier in classifiers:
@@ -131,18 +135,16 @@ if __name__ == "__main__":
     # if classifier is not RANDOM:
     #   preview_prediction(data, classifier, 'Y_test', classifier.dataset.Y_test, 'Y_pred', classifier.Y_pred)
 
-  payouts = random_payout(len(dataset.Y_test))
-
-  compare_classifiers(dataset, classifiers, payouts=payouts, verbose=False)
+  # Balance Simulation
 
   def bet_min_prob(payout: float, probability: float, classifier: Classifier, min_probability: float = 0.6) -> float:
     return bet_same(payout) if isinstance(classifier, RandomClassifier) or probability >= min_probability else 0
   
-  compare_classifiers(dataset, classifiers, bet_min_prob, payouts)
-
   def bet_min_prob_greedy(payout: float, probability: float, classifier: Classifier, min_probability: float = 0.6) -> float:
     return bet_greedy(payout) if isinstance(classifier, RandomClassifier) or probability >= min_probability else 0
 
-  compare_classifiers(dataset, classifiers, bet_min_prob_greedy, payouts)
+  payouts = random_payout(len(dataset.Y_test))
 
-  compare_classifiers(dataset, classifiers, bet_same, payouts)
+  bet_strategies = [bet_same_always, bet_same, bet_min_prob, bet_greedy, bet_min_prob_greedy]
+
+  compare_classifiers_bet_strategies(dataset, classifiers, bet_strategies, payouts, verbose=False)

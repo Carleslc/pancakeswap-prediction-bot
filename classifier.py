@@ -2,6 +2,9 @@ from typing import Union
 
 from abc import ABC, abstractmethod
 
+import numpy as np
+import pandas as pd
+
 from sklearn.base import ClassifierMixin
 from sklearn.exceptions import NotFittedError
 from sklearn.preprocessing import LabelEncoder
@@ -12,9 +15,7 @@ from sklearn.metrics import accuracy_score
 
 from dataset import Dataset
 from visualization import plot_barh
-
-import numpy as np
-import pandas as pd
+from settings import RANDOM_STATE
 
 class Classifier(ABC):
 
@@ -95,11 +96,15 @@ class SklearnClassifier(Classifier):
     if hasattr(self.classifier, 'feature_importances_'):
       self.feature_importances = pd.DataFrame(self.classifier.feature_importances_, columns=['Importance'], index=self.dataset.features).sort_values(by='Importance', ascending=False)
       
-      if len(self.feature_importances) <= limit:
-        print(self.feature_importances)
+      feature_importances = self.feature_importances
 
-        if plot:
-          plot_barh(self.feature_importances, title=f"Feature importances ({self.name})")
+      if len(feature_importances) > limit:
+        feature_importances = feature_importances.iloc[:limit]
+
+      print(feature_importances)
+
+      if plot:
+        plot_barh(feature_importances, title=f"Feature importances ({self.name})")
   
 def unwrap(classifier: Union[ClassifierMixin, SklearnClassifier]):
   if isinstance(classifier, SklearnClassifier):
@@ -114,7 +119,7 @@ class GridSearchClassifier(SklearnClassifier):
     if cv is None:
       cv = [(slice(None), slice(None))] # no fold
     elif cv == 1:
-      cv = ShuffleSplit(test_size=0.2, n_splits=1) # 1 fold
+      cv = ShuffleSplit(test_size=0.2, n_splits=1, random_state=RANDOM_STATE) # 1 fold
     
     self.params = params
     self.verbose = verbose
@@ -147,7 +152,7 @@ class MixedClassifier(SklearnClassifier):
   def _fit(self):
     super()._fit()
 
-    self.classifiers = []
+    self.classifiers: list[SklearnClassifier] = []
 
     for estimator in self.classifier.estimators_:
       classifier = SklearnClassifier(estimator)
@@ -156,14 +161,15 @@ class MixedClassifier(SklearnClassifier):
 
 class RandomClassifier(Classifier):
 
-  def __init__(self):
+  def __init__(self, random_state: np.random.RandomState = None):
     super().__init__('RandomClassifier')
+    self.random = random_state or np.random.RandomState()
   
   def _fit(self):
     self.classes = sorted(set(self.dataset.Y_train))
   
   def _predict(self, X) -> np.ndarray:
-    return np.random.choice(self.classes, size=len(X))
+    return self.random.choice(self.classes, size=len(X))
 
   def probabilities(self, X) -> np.ndarray:
     return np.array([[1/len(self.classes)] * len(self.classes)] * len(X))

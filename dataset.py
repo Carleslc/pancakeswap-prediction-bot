@@ -1,3 +1,5 @@
+from typing import Union
+from collections.abc import Iterable
 from numpy.typing import ArrayLike
 
 import numpy as np
@@ -28,7 +30,7 @@ class Dataset:
     self.X[name] = values
     self.new_columns.append(name)
   
-  def add_columns(self, names: list[str], values: list[ArrayLike], prepend: bool = False):
+  def add_columns(self, names: list[str], values: Iterable[ArrayLike], prepend: bool = False):
     new_columns = pd.DataFrame(np.array(values), columns=names, index=self.X.index)
     new_X = [new_columns, self.X] if prepend else [self.X, new_columns]
     self.X = pd.concat(new_X, axis=1)
@@ -74,3 +76,9 @@ class Dataset:
   
   def __getitem__(self, key: str):
     return self.X[key]
+
+  def __setitem__(self, key: Union[str, list[str]], value: Union[ArrayLike, Iterable[ArrayLike]]):
+    if isinstance(key, list):
+      self.add_columns(key, value)
+    else:
+      self.add_column(key, value)
