@@ -18,7 +18,7 @@ class Dataset:
   
   @property
   def features(self):
-    return self.X.columns.values
+    return self.X.columns
   
   @property
   def labeled_data(self):
@@ -36,19 +36,26 @@ class Dataset:
     self.X = pd.concat(new_X, axis=1)
     self.new_columns.extend(names)
   
-  def train_test_split(self, train_percentage: float = 0.8, normalize: bool = True):
+  def train_test_split(self, train_percentage: float = 0.8, normalize: Union[bool, Iterable[str]] = True):
     split_at = int(len(self.X)*train_percentage)
 
-    self.X_train = self.X[:split_at]
-    self.X_test = self.X[split_at:]
+    self.X_train = self.X[:split_at].copy(deep=False)
+    self.X_test = self.X[split_at:].copy(deep=False)
 
     self.Y_train = self.Y[:split_at] if self.Y is not None else None
     self.Y_test = self.Y[split_at:] if self.Y is not None else None
 
-    if normalize:
+    if (isinstance(normalize, Iterable) and len(normalize)) or bool(normalize):
       scaler = StandardScaler()
-      self.X_train = scaler.fit_transform(self.X_train)
-      self.X_test = scaler.transform(self.X_test)
+
+      if isinstance(normalize, Iterable):
+        scaler.fit(self.X_train[normalize])
+        self.X_train[normalize] = scaler.transform(self.X_train[normalize])
+        self.X_test[normalize] = scaler.transform(self.X_test[normalize])
+      else:
+        scaler.fit(self.X_train)
+        self.X_train[:] = scaler.transform(self.X_train)
+        self.X_test[:] = scaler.transform(self.X_test)
   
   def best_features(self, top_features: int = 10) -> pd.DataFrame:
     top_features = min(10, len(self.features))

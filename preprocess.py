@@ -16,12 +16,14 @@ from utils import error, datetime_from_ms
 # Columns to use for training
 FEATURE_COLUMNS = ['high', 'low', 'close', 'volume']
 
+SKIP_NORMALIZATION = ['day', 'weekday', 'day_minute', 'vwap_diff', 'body_%', 'high_shadow_%', 'low_shadow_%', 'rsi', 'bb_w', 'bb_p']
+
 # History to save for each row
 RSI_W = 14
 BB_W = 20
-LOOKBEHIND_ROWS = list(range(2 * LOOKAHEAD, 0, -1))
-LOOKBEHIND_ROWS_DIFF = [2 * LOOKAHEAD, LOOKAHEAD]
-LOOKBEHIND = max(max(LOOKBEHIND_ROWS), max(LOOKBEHIND_ROWS_DIFF)) + max(RSI_W, BB_W)
+LOOKBEHIND_ROWS = [] # list(range(3 * LOOKAHEAD, 0, -1))
+LOOKBEHIND_ROWS_DIFF = [] # [2 * LOOKAHEAD, LOOKAHEAD]
+LOOKBEHIND = max(max(LOOKBEHIND_ROWS, default=0), max(LOOKBEHIND_ROWS_DIFF, default=0)) + max(RSI_W, BB_W)
 
 def build_dataset(data: pd.DataFrame) -> Dataset:
   """
@@ -86,7 +88,7 @@ def add_price_diff(dataset: Dataset):
   # dataset['price_diff'] = price_diff
 
   hlc3 = (high + low + close_price) / 3
-  # dataset['hlc3'] = (high + low + close_price) / 3
+  # dataset['hlc3'] = hlc3
   # dataset['ohlc4'] = (open_price + high + low + close_price) / 4
   dataset['vwap_diff'] = vwap(hlc3.values, dataset['volume'].values) - hlc3
 
@@ -154,12 +156,15 @@ def add_historical_data(dataset: Dataset, columns: list[str], lookbehind: list[i
     
     lookbehind_columns = list(map(lambda i: f'{label}-{i}', lookbehind))
 
+    if column in SKIP_NORMALIZATION:
+      SKIP_NORMALIZATION.extend(lookbehind_columns)
+
     dataset[lookbehind_columns] = X_lookbehind
 
   for column in columns:
     add_column_lookbehind(column, column)
 
-def get_dataset(data: pd.DataFrame, preview: bool = True, best_features: bool = True, correlation_matrix: bool = True) -> Dataset:
+def get_dataset(data: pd.DataFrame, preview: bool = True, preview_plot: bool = False, best_features: bool = True, correlation_matrix: bool = True) -> Dataset:
   print("Preprocessing data...")
 
   dataset = build_dataset(data)
@@ -167,9 +172,9 @@ def get_dataset(data: pd.DataFrame, preview: bool = True, best_features: bool = 
   print(f"Features: {', '.join(dataset.features)}")
 
   if preview:
-    preview_dataset(data, dataset, plot=False, preview_bars=None)
+    preview_dataset(data, dataset, plot=preview_plot, preview_bars=None)
   
-  dataset.train_test_split()
+  dataset.train_test_split(normalize=np.setdiff1d(dataset.features, SKIP_NORMALIZATION, assume_unique=True))
 
   if best_features:
     dataset.best_features()

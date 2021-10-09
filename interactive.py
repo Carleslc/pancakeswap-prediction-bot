@@ -1,5 +1,5 @@
 from utils import try_float, is_nan
-from settings import bet_greedy as get_bet
+from strategies import bet_greedy as get_bet
 
 DECIMALS = 4
 ADJUST_EXPECTED = 0.2
