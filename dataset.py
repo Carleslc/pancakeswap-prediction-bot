@@ -21,8 +21,12 @@ class Dataset:
     return self.X.columns
   
   @property
+  def has_labels(self):
+    return self.Y is not None and len(self.Y) > 0
+  
+  @property
   def labeled_data(self):
-    if self.Y is None:
+    if not self.has_labels:
       return self.X
     return pd.concat([self.X, pd.DataFrame(self.Y, columns=['Y'], index=self.X.index)], axis=1)
   
@@ -42,20 +46,30 @@ class Dataset:
     self.X_train = self.X[:split_at].copy(deep=False)
     self.X_test = self.X[split_at:].copy(deep=False)
 
-    self.Y_train = self.Y[:split_at] if self.Y is not None else None
-    self.Y_test = self.Y[split_at:] if self.Y is not None else None
+    self.Y_train = self.Y[:split_at] if self.has_labels else None
+    self.Y_test = self.Y[split_at:] if self.has_labels else None
 
     if (isinstance(normalize, Iterable) and len(normalize)) or bool(normalize):
       scaler = StandardScaler()
 
-      if isinstance(normalize, Iterable):
-        scaler.fit(self.X_train[normalize])
-        self.X_train[normalize] = scaler.transform(self.X_train[normalize])
-        self.X_test[normalize] = scaler.transform(self.X_test[normalize])
-      else:
-        scaler.fit(self.X_train)
-        self.X_train[:] = scaler.transform(self.X_train)
-        self.X_test[:] = scaler.transform(self.X_test)
+      train = len(self.X_train) > 0
+      test = len(self.X_test) > 0
+
+      scaler_data = self.X_train if train else self.X_test
+
+      if len(scaler_data):
+        if isinstance(normalize, Iterable):
+          scaler.fit(scaler_data[normalize])
+          if train:
+            self.X_train[normalize] = scaler.transform(self.X_train[normalize])
+          if test:
+            self.X_test[normalize] = scaler.transform(self.X_test[normalize])
+        else:
+          scaler.fit(scaler_data)
+          if train:
+            self.X_train[:] = scaler.transform(self.X_train)
+          if test:
+            self.X_test[:] = scaler.transform(self.X_test)
   
   def best_features(self, top_features: int = 10) -> pd.DataFrame:
     top_features = min(10, len(self.features))

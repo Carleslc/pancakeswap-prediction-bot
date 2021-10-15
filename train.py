@@ -6,7 +6,7 @@ from sklearn.base import ClassifierMixin
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, ExtraTreesClassifier
 from sklearn.svm import SVC
 
-from data import exists_data, get_data, save_data, load_data
+from data import exists_data, get_data, save_data, load_data, DATA_FILE
 from classifier import Dataset, Classifier, RandomClassifier, SklearnClassifier, GridSearchClassifier, StackClassifier, VoteClassifier, wrap_classifiers
 from visualization import display_entries, preview_prediction, plot_balances
 from strategies import RSIClassifier, bet_same, bet_same_always, bet_greedy, bet_min_prob, bet_min_prob_greedy
@@ -84,12 +84,20 @@ def compare_classifiers(dataset: Dataset, classifiers: list[Classifier], bet_str
   for classifier in classifiers:
     final_balance = balances[classifier][-1]
     score = classifier.win_bets/classifier.bets if classifier.bets > 0 else 0.5
+
     print(f"\n{classifier} score: {score:.3f}")
     print(f"{classifier} final balance: {final_balance:.3f} ({((final_balance/START_BALANCE - 1)*100):.2f}%)")
     if len(classifier.Y_success_probs):
       print(f"{classifier} success mean probability: {np.mean(classifier.Y_success_probs):.3f}")
     if len(classifier.Y_fail_probs):
       print(f"{classifier} fail mean probability: {np.mean(classifier.Y_fail_probs):.3f}")
+    
+    # Clear cached results
+    del classifier.Y_prob
+    del classifier.Y_success_probs
+    del classifier.Y_fail_probs
+    del classifier.bets
+    del classifier.win_bets
 
   plot_balances(title, balances, START_BALANCE)
 
@@ -109,6 +117,8 @@ if __name__ == "__main__":
 
   data = load_data()
 
+  VERSION = DATA_FILE
+
   PREVIEW_DATA = True
   PREVIEW_DATA_PLOT = False
   KBEST_FEATURES = True
@@ -122,16 +132,16 @@ if __name__ == "__main__":
   dataset = preprocess.get_dataset(data, preview=PREVIEW_DATA, preview_plot=PREVIEW_DATA_PLOT, best_features=KBEST_FEATURES, correlation_matrix=CORRELATION_MATRIX)
 
   # Classifiers
-  RANDOM = RandomClassifier(dataset, random_state=RANDOM_STATE)
+  RANDOM = RandomClassifier(dataset, 'Random', random_state=RANDOM_STATE, version=VERSION)
   RANDOM_FOREST = RandomForestClassifier(n_estimators=500, criterion='entropy', random_state=RANDOM_STATE)
   EXTRA_RANDOM_FOREST = ExtraTreesClassifier(n_estimators=500, random_state=RANDOM_STATE)
   GRADIENT_BOOST = GradientBoostingClassifier(n_estimators=500, n_iter_no_change=50, random_state=RANDOM_STATE)
   SVM = SVC(probability=True, random_state=RANDOM_STATE)
-  RSI = RSIClassifier(dataset)
+  RSI = RSIClassifier(dataset, 'RSI', version=VERSION)
   # TODO: XGBoost
 
-  mix_classifiers = wrap_classifiers(dataset, [EXTRA_RANDOM_FOREST, GRADIENT_BOOST])
-  STACK = StackClassifier(dataset, mix_classifiers, passthrough=True, verbose=True) # *
+  mix_classifiers = wrap_classifiers(dataset, [EXTRA_RANDOM_FOREST, GRADIENT_BOOST], VERSION)
+  STACK = StackClassifier(dataset, mix_classifiers, 'Stack', passthrough=True, verbose=True, version=VERSION) # *
 
   # Training
   RANDOM.train()
@@ -139,9 +149,9 @@ if __name__ == "__main__":
   for classifier in [RSI, STACK]:
     train_log(classifier)
   
-  VOTE = VoteClassifier(dataset, [*STACK.estimators_, RSI], 'VotingClassifier', voting='soft', weights=[1, 0.75, 0.25], prefit=True, verbose=True) # *
-  VOTE_STACKING = VoteClassifier(dataset, [STACK, VOTE, RSI], 'VoteStacking', prefit=True)
-  STACKING_VOTE = StackClassifier(dataset, [STACK, VOTE], 'StackingVote', passthrough=True, verbose=True) # *
+  VOTE = VoteClassifier(dataset, [*STACK.estimators_, RSI], 'Vote', voting='soft', weights=[1, 0.7, 0.3], prefit=True, verbose=True, version=VERSION) # *
+  VOTE_STACKING = VoteClassifier(dataset, [STACK, VOTE, RSI], 'VoteStacking', prefit=True, version=VERSION)
+  STACKING_VOTE = StackClassifier(dataset, [STACK, VOTE], 'StackingVote', passthrough=True, verbose=True, version=VERSION) # *
 
   train_log(STACKING_VOTE)
 
@@ -166,3 +176,10 @@ if __name__ == "__main__":
   payouts = random_payout(len(dataset.Y_test))
 
   compare_classifiers_bet_strategies(dataset, classifiers, BET_STRATEGIES, payouts, verbose=False)
+
+  # Save models
+
+  print()
+
+  for classifier in [RSI, STACK, VOTE, STACKING_VOTE]:
+    classifier.save()

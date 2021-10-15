@@ -11,7 +11,7 @@ from settings import LOOKAHEAD, TIMEZONE
 if TYPE_CHECKING:
   from classifier import Classifier
 
-def ms_to_datetime(data: pd.DataFrame, column: str, timezone = TIMEZONE):
+def ms_to_datetime(data: pd.DataFrame, column: str, timezone = TIMEZONE) -> pd.DatetimeIndex:
   return pd.DatetimeIndex(pd.to_datetime(data[column], unit='ms')).tz_localize('UTC').tz_convert(timezone)
 
 def plt_show_non_blocking():
@@ -28,7 +28,7 @@ def plot_data(data: pd.DataFrame, symbol: str):
   plt.plot(data['close_time'], data['close'], color='green')
   plt.show()
 
-def get_Y_preview(data: pd.DataFrame, Y: np.ndarray, preview_bars: int = 10):
+def get_Y_preview(data: pd.DataFrame, Y: np.ndarray, preview_bars: int = None):
   total_bars = len(Y)
   if preview_bars is None:
     preview_bars = total_bars
@@ -39,7 +39,7 @@ def get_Y_preview(data: pd.DataFrame, Y: np.ndarray, preview_bars: int = 10):
 
   return Y_preview, Y_dates, start_index
 
-def preview_dataset(data: pd.DataFrame, dataset: Dataset, preview_bars: int = 10, plot: bool = True):
+def preview_dataset(data: pd.DataFrame, dataset: Dataset, preview_bars: int = None, plot: bool = True):
   Y_preview, Y_dates, start_index = get_Y_preview(data, dataset.Y, preview_bars)
   X_preview = pd.DataFrame(dataset.X.iloc[-start_index::LOOKAHEAD])
 

@@ -1,4 +1,5 @@
 import os
+import json
 
 import pandas as pd
 
@@ -13,11 +14,11 @@ DATA_PATH = Path('data')
 
 API_CLIENT: API = None
 
-def load_api_client() -> API:
+def load_api_client(symbol: str = SYMBOL) -> API:
   global API_CLIENT
 
   if not API_CLIENT:
-    print(f"Loading {type(API).__name__} API...")
+    print(f"Loading {API.__name__} API...")
 
     load_dotenv()
 
@@ -29,28 +30,55 @@ def load_api_client() -> API:
     if not api_secret:
       error("Missing API_SECRET (.env)")
 
-    API_CLIENT = API(api_key, api_secret)
+    API_CLIENT = API(api_key, api_secret, SYMBOL)
+  
+  API_CLIENT.symbol = symbol
   
   return API_CLIENT
 
 def get_data(symbol = SYMBOL, length = LENGTH, interval = INTERVAL) -> pd.DataFrame:
+  load_api_client(symbol)
+
+  print(f"Fetching data from Binance ({API_CLIENT.symbol.upper()} {length} {interval})...")
+
+  return API_CLIENT.get_historical_data(length, interval)
+
+def get_current_price(symbol = SYMBOL, with_avg: bool = True):
+  load_api_client(symbol)
+
+  return API_CLIENT.get_current_price(with_avg)
+
+def get_exchange_info():
   load_api_client()
 
-  print(f"Fetching data from Binance ({symbol} {length} {interval})...")
+  return API_CLIENT.get_exchange_info()
 
-  return API_CLIENT.get_historical_data(symbol, length, interval)
+def get_data_file_path(filename: str, extension: str = 'csv') -> Path:
+  return DATA_PATH / f'{filename}.{extension}'
 
-def get_data_file_path(filename: str) -> Path:
-  return DATA_PATH / f'{filename}.csv'
+def exists_data(filename: str = DATA_FILE, extension: str = 'csv') -> bool:
+  return get_data_file_path(filename, extension).exists()
 
-def exists_data(filename: str = DATA_FILE) -> bool:
-  return get_data_file_path(filename).exists()
+def _save_data(write, filename: str, extension: str = 'csv'):
+  path = get_data_file_path(filename, extension)
+  os.makedirs(DATA_PATH, exist_ok=True)
+  write(path)
+  print(f"Saved data: {path}")
+
+def save_exchange_info(filename: str = 'exchange_info'):
+  info = get_exchange_info()
+
+  def write_exchange_info(path: Path):
+    with open(path, 'w') as file:
+      file.write(json.dumps(info, indent=2))
+  
+  _save_data(write_exchange_info, filename, 'json')
 
 def save_data(data: pd.DataFrame, filename: str = DATA_FILE):
-  path = get_data_file_path(filename)
-  os.makedirs(DATA_PATH, exist_ok=True)
-  data.to_csv(path, index=False, header=True)
-  print(f"Saved data: {path}")
+  def write_data_csv(path: Path):
+    data.to_csv(path, index=False, header=True)
+  
+  _save_data(write_data_csv, filename, 'csv')
 
 def load_data(filename: str = DATA_FILE, columns: list[str] = None) -> pd.DataFrame:
   print("Loading data...")
@@ -64,7 +92,7 @@ if __name__ == "__main__":
   if not exists_data():
     save_data(get_data())
 
-  data = load_data(DATA_FILE, ['close_time', 'close'])
+  data = load_data(columns=['close_time', 'close'])
 
   from visualization import plot_data
 

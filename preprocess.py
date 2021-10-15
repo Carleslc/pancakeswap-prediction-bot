@@ -5,6 +5,7 @@ from numba import jit
 from ta import add_all_ta_features
 from ta.volatility import BollingerBands
 from ta.momentum import rsi
+from ta.trend import sma_indicator
 from ta.others import daily_return
 
 from dataset import Dataset
@@ -16,30 +17,34 @@ from utils import error, datetime_from_ms
 # Columns to use for training
 FEATURE_COLUMNS = ['high', 'low', 'close', 'volume']
 
-SKIP_NORMALIZATION = ['day', 'weekday', 'day_minute', 'vwap_diff', 'body_%', 'high_shadow_%', 'low_shadow_%', 'rsi', 'bb_w', 'bb_p']
+SKIP_NORMALIZATION = ['day', 'weekday', 'day_minute', 'change', 'vwap_diff', 'ma_diff', 'body_%', 'high_shadow_%', 'low_shadow_%', 'rsi', 'bb_w', 'bb_p']
 
 # History to save for each row
 RSI_W = 14
 BB_W = 20
+MA_W = 5
 LOOKBEHIND_ROWS = [] # list(range(3 * LOOKAHEAD, 0, -1))
 LOOKBEHIND_ROWS_DIFF = [] # [2 * LOOKAHEAD, LOOKAHEAD]
-LOOKBEHIND = max(max(LOOKBEHIND_ROWS, default=0), max(LOOKBEHIND_ROWS_DIFF, default=0)) + max(RSI_W, BB_W)
+LOOKBEHIND = max(max(LOOKBEHIND_ROWS, default=0), max(LOOKBEHIND_ROWS_DIFF, default=0)) + max(RSI_W, BB_W, MA_W)
 
-def build_dataset(data: pd.DataFrame) -> Dataset:
+def build_dataset(data: pd.DataFrame, lookahead: int = LOOKAHEAD) -> Dataset:
   """
   Convert historical data to a dataset with labels
   X: ohlcv relevant data with rows at time t
   Y: 1 if price at t+LOOKAHEAD is higher (bull bet) or 0 if price at t+LOOKAHEAD is lower (bear bet)
   """
-  if len(data) < LOOKBEHIND + LOOKAHEAD:
+  print("Preprocessing data...")
+
+  if len(data) < LOOKBEHIND + lookahead:
     error("Not enough data")
   
   Y = []
 
   close_prices = data['close']
 
-  for t in range(LOOKBEHIND, len(data) - LOOKAHEAD):
-    Y.append(1 if close_prices[t + LOOKAHEAD] > close_prices[t] else 0)
+  if lookahead > 0:
+    for t in range(LOOKBEHIND, len(data) - lookahead):
+      Y.append(1 if close_prices[t + lookahead] > close_prices[t] else 0)
 
   dataset = Dataset(data, Y)
 
@@ -49,13 +54,18 @@ def build_dataset(data: pd.DataFrame) -> Dataset:
   add_historical_data(dataset, ['high', 'low', 'close', 'volume', 'rsi', 'bb_p', 'bb_w', 'vwap_diff'], LOOKBEHIND_ROWS_DIFF, diff=True)
   add_historical_data(dataset, ['change'], LOOKBEHIND_ROWS)
 
-  dataset.X = dataset.X[FEATURE_COLUMNS + dataset.new_columns].iloc[LOOKBEHIND:-LOOKAHEAD]
+  dataset.X = dataset.X[FEATURE_COLUMNS + dataset.new_columns]
+
+  if lookahead > 0:
+    dataset.X = dataset.X.iloc[LOOKBEHIND:-lookahead]
+  else:
+    dataset.X = dataset.X.iloc[LOOKBEHIND:]
   
   return dataset
 
 def dataset_days(dataset: Dataset) -> int:
   open_time = dataset['open_time'].values
-  datetime_diff = datetime_from_ms(open_time[-1]) - datetime_from_ms(open_time[0])
+  datetime_diff = datetime_from_ms(int(open_time[-1])) - datetime_from_ms(int(open_time[0]))
   return datetime_diff.days + 1
 
 def add_time(dataset: Dataset):
@@ -64,17 +74,13 @@ def add_time(dataset: Dataset):
   day_minutes = []
 
   for time in dataset['close_time']:
-    time = datetime_from_ms(time)
+    time = datetime_from_ms(int(time))
     days.append(time.day)
     weekdays.append(time.weekday())
     day_minutes.append(60*time.hour + time.minute)
 
-  total_days = dataset_days(dataset)
-
-  if total_days >= 7:
-    dataset['day'] = days
-    dataset['weekday'] = weekdays
-  
+  dataset['day'] = days
+  dataset['weekday'] = weekdays
   dataset['day_minute'] = day_minutes
 
 def add_price_diff(dataset: Dataset):
@@ -120,15 +126,26 @@ def add_technical_indicators(dataset: Dataset, all: bool = False):
   else:
     close = dataset['close']
     
+    # RSI
+    # https://technical-analysis-library-in-python.readthedocs.io/en/latest/ta.html#ta.momentum.rsi
     dataset['rsi'] = rsi(close, window=RSI_W)
 
-    # https://technical-analysis-library-in-python.readthedocs.io/en/latest/ta.html?highlight=bollinger#ta.volatility.BollingerBands
+    # Bollinger Bands
+    # https://technical-analysis-library-in-python.readthedocs.io/en/latest/ta.html#ta.volatility.BollingerBands
     bb = BollingerBands(close, window=BB_W, window_dev=2)
     dataset['bb_m'] = bb.bollinger_mavg()
     # dataset['bb_h'] = bb.bollinger_hband()
     # dataset['bb_l'] = bb.bollinger_lband()
     dataset['bb_w'] = bb.bollinger_wband() # BandWidth
     dataset['bb_p'] = bb.bollinger_pband() # %B
+
+    # Moving Average
+    ma = sma_indicator(close, window=MA_W)
+    # dataset['ma'] = ma
+    dataset['ma_diff'] = ma - close
+
+    # TODO Ichimoku Cloud
+    # https://technical-analysis-library-in-python.readthedocs.io/en/latest/ta.html#ta.trend.IchimokuIndicator
 
 def add_historical_data(dataset: Dataset, columns: list[str], lookbehind: list[int] = LOOKBEHIND_ROWS, diff: bool = False):
   if not len(lookbehind):
@@ -164,15 +181,15 @@ def add_historical_data(dataset: Dataset, columns: list[str], lookbehind: list[i
   for column in columns:
     add_column_lookbehind(column, column)
 
-def get_dataset(data: pd.DataFrame, preview: bool = True, preview_plot: bool = False, best_features: bool = True, correlation_matrix: bool = True) -> Dataset:
-  print("Preprocessing data...")
-
+def get_dataset(data: pd.DataFrame, preview: bool = False, preview_plot: bool = False, best_features: bool = False, correlation_matrix: bool = False) -> Dataset:
+  '''
+  Prepare data for training and validation
+  '''
   dataset = build_dataset(data)
 
-  print(f"Features: {', '.join(dataset.features)}")
-
   if preview:
-    preview_dataset(data, dataset, plot=preview_plot, preview_bars=None)
+    print(f"Features: {', '.join(dataset.features)}")
+    preview_dataset(data, dataset, plot=preview_plot)
   
   dataset.train_test_split(normalize=np.setdiff1d(dataset.features, SKIP_NORMALIZATION, assume_unique=True))
 
@@ -181,7 +198,17 @@ def get_dataset(data: pd.DataFrame, preview: bool = True, preview_plot: bool = F
 
   if correlation_matrix and len(dataset.features) <= 30:
     plot_correlation_matrix(dataset)
-
+  
   display_entries('Total', dataset.Y)
+
+  return dataset
+
+def prepare(data: pd.DataFrame) -> Dataset:
+  '''
+  Prepare new data for prediction
+  '''
+  dataset = build_dataset(data, lookahead=0)
+
+  dataset.train_test_split(train_percentage=0, normalize=np.setdiff1d(dataset.features, SKIP_NORMALIZATION, assume_unique=True))
 
   return dataset

@@ -32,8 +32,8 @@ class RSIClassifier(Classifier):
   OVERBOUGHT = 70
   OVERSOLD = 30
 
-  def __init__(self, dataset: Dataset = None, rsi_column: str = 'rsi'):
-    super().__init__(dataset)
+  def __init__(self, dataset: Dataset = None, name: str = None, rsi_column: str = 'rsi', version: str = None):
+    super().__init__(dataset, name, version=version)
     self.rsi_column = rsi_column
   
   def fit(self, _, Y_train):
@@ -51,7 +51,24 @@ class RSIClassifier(Classifier):
 
   def predict(self, X) -> np.ndarray:
     predicted_probabilities = self.probabilities(X)
-    tie_mask = np.all(predicted_probabilities == 0.5, axis=1)
     max_indices = np.argmax(predicted_probabilities, axis=1)
+    tie_mask = np.all(predicted_probabilities == 0.5, axis=1)
     max_indices[tie_mask] = self.most_common_class
+    return self.classes[max_indices]
+
+class MAClassifier(Classifier):
+
+  def __init__(self, dataset: Dataset = None, version: str = None):
+    super().__init__(dataset, version=version)
+  
+  def fit(self, _, Y_train):
+    self.classes = np.unique(Y_train)
+  
+  def probabilities(self, X) -> np.ndarray:
+    # TODO
+    return np.array([]).T
+  
+  def predict(self, X) -> np.ndarray:
+    predicted_probabilities = self.probabilities(X)
+    max_indices = np.argmax(predicted_probabilities, axis=1)
     return self.classes[max_indices]

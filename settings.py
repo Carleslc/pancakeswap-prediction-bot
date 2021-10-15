@@ -11,8 +11,8 @@ SYMBOL = 'BNB/USDT'
 LENGTH = '7 day'
 INTERVAL = API.INTERVAL_1_MINUTE
 
-# Number of bars ahead to predict (5 minutes)
-LOOKAHEAD = 5 if INTERVAL == API.INTERVAL_1_MINUTE else 1
+# Number of bars ahead to predict (5 minutes + 1 setting bets)
+LOOKAHEAD = 6 if INTERVAL == API.INTERVAL_1_MINUTE else 1
 
 # Balance simulation
 START_BALANCE = 0.15
