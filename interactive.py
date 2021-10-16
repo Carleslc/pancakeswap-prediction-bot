@@ -7,20 +7,22 @@ from math import ceil
 from settings import SYMBOL, TRANSACTION_FEE
 from data import get_data, save_data, load_data, get_current_price, DATA_FILE
 from preprocess import prepare
-from strategies import bet_greedy as get_bet
+from strategies import bet_min_prob_greedy as get_bet
 from visualization import ms_to_datetime
 from utils import try_float, is_nan, error
 from classifier import Classifier
 
 DECIMALS = 4
 ADJUST_EXPECTED = 0.2
-BET_ON_EXPECTED = True
+BET_ON_EXPECTED = False
+MIN_PROBABILITY = 0.6
 
 PREVIEW_COLUMNS = ['close_time', 'open', 'close', 'high', 'low', 'change', 'volume', 'body_%', 'high_shadow_%', 'low_shadow_%', 'rsi', 'bb_m', 'bb_p', 'ma_diff']
 
 DATA_FILE_LAST = f"{SYMBOL.replace('/', '').lower()}_last"
 
 # TODO: Sync blocks 5m
+# TODO: Auto bet
 
 def show_current_price():
   current = get_current_price()
@@ -95,19 +97,22 @@ if __name__ == "__main__":
 
         print(f'Mean {prediction} probability: {(probability*100):.2f}%')
 
-        payout = try_float(input(f"\n{prediction} payout: "))
+        do_bet = probability > MIN_PROBABILITY
 
-        if not is_nan(payout):
-          if BET_ON_EXPECTED:
-            payout = payout + min(max(2 - payout, -ADJUST_EXPECTED), ADJUST_EXPECTED)
-            print(f"Expected: {round(payout, 2)}")
-          
-          bet = get_bet(payout, probability)
+        if do_bet:
+          payout = try_float(input(f"\n{prediction} payout: "))
 
-          do_bet = bet > 2*TRANSACTION_FEE
+          if not is_nan(payout):
+            if BET_ON_EXPECTED:
+              payout = payout + min(max(2 - payout, -ADJUST_EXPECTED), ADJUST_EXPECTED)
+              print(f"Expected: {round(payout, 2)}")
+            
+            bet = get_bet(payout, probability, min_probability=MIN_PROBABILITY)
 
-          if do_bet:
-            print(f'BET {round(bet, DECIMALS)} {prediction}')
+            do_bet = bet > 2*TRANSACTION_FEE
+
+            if do_bet:
+              print(f'BET {round(bet, DECIMALS)} {prediction}')
       
       if not do_bet:
         print('DO NOT BET')
