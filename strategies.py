@@ -19,10 +19,10 @@ def bet_greedy(payout: float = 2, probability: float = 1, _ = None) -> float:
     return 0
   return max(BET / 2, min(BET * 2, BET * (1 + (payout - 2)))) # Greedy if payout > 2
 
-def bet_min_prob(payout: float, probability: float, classifier: Classifier, min_probability: float = 0.6) -> float:
+def bet_min_prob(payout: float, probability: float, classifier: Classifier = None, min_probability: float = 0.6) -> float:
     return bet_same(payout) if isinstance(classifier, RandomClassifier) or probability >= min_probability else 0
   
-def bet_min_prob_greedy(payout: float, probability: float, classifier: Classifier, min_probability: float = 0.6) -> float:
+def bet_min_prob_greedy(payout: float, probability: float, classifier: Classifier = None, min_probability: float = 0.6) -> float:
   return bet_greedy(payout) if isinstance(classifier, RandomClassifier) or probability >= min_probability else 0
 
 # Custom classifiers
@@ -33,7 +33,7 @@ class RSIClassifier(Classifier):
   OVERSOLD = 30
 
   def __init__(self, dataset: Dataset = None, name: str = None, rsi_column: str = 'rsi', version: str = None):
-    super().__init__(dataset, name, version=version)
+    super().__init__(dataset, name, version)
     self.rsi_column = rsi_column
   
   def fit(self, _, Y_train):
@@ -58,17 +58,24 @@ class RSIClassifier(Classifier):
 
 class MAClassifier(Classifier):
 
-  def __init__(self, dataset: Dataset = None, version: str = None):
-    super().__init__(dataset, version=version)
+  def __init__(self, dataset: Dataset = None, name: str = None, version: str = None):
+    super().__init__(dataset, name, version)
   
   def fit(self, _, Y_train):
     self.classes = np.unique(Y_train)
   
   def probabilities(self, X) -> np.ndarray:
-    # TODO
-    return np.array([]).T
+    ma_diff = self.get_column(X, 'ma_diff')
+    up_probability = 0.5 + ma_diff
+    up_probability[up_probability < 0] = 0
+    up_probability[up_probability > 1] = 1
+    down_probability = 1 - up_probability
+    return np.array([down_probability, up_probability]).T
   
   def predict(self, X) -> np.ndarray:
     predicted_probabilities = self.probabilities(X)
     max_indices = np.argmax(predicted_probabilities, axis=1)
     return self.classes[max_indices]
+
+# TODO: BollingerClassifier
+# TODO: ConsensusClassifier (interactive.py voting version)

@@ -3,6 +3,7 @@ import statistics
 import numpy as np
 import pandas as pd
 
+from math import ceil
 from settings import SYMBOL, TRANSACTION_FEE
 from data import get_data, save_data, load_data, get_current_price, DATA_FILE
 from preprocess import prepare
@@ -64,7 +65,7 @@ def load_models(models: list[str]) -> list[Classifier]:
   return loaded_models
 
 if __name__ == "__main__":
-  models = load_models(['RSI', 'Stack', 'Vote', 'StackingVote'])
+  models = load_models(['RSI', 'MA', 'Stack', 'Agg'])
 
   print()
 
@@ -85,7 +86,7 @@ if __name__ == "__main__":
       consensus_prediction = statistics.mode(unwrap_predictions)
       repetitions = np.bincount(unwrap_predictions)
 
-      do_bet = repetitions[consensus_prediction] > len(predictions) / 2
+      do_bet = repetitions[consensus_prediction] > ceil(len(predictions) / 2)
 
       if do_bet:
         consensus_probabilities = [probability for prediction, probability in predictions if prediction == consensus_prediction]
@@ -112,7 +113,8 @@ if __name__ == "__main__":
         print('DO NOT BET')
       
       print()
-
       input("Next round? ")
+
+      print()
   except KeyboardInterrupt:
     pass

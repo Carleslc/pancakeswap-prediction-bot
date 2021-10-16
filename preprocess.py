@@ -16,15 +16,16 @@ from utils import error, datetime_from_ms
 
 # Columns to use for training
 FEATURE_COLUMNS = ['high', 'low', 'close', 'volume']
-
+LOOKBEHIND_COLUMNS = ['change']
+LOOKBEHIND_COLUMNS_DIFF = ['close', 'volume', 'rsi', 'bb_p', 'bb_w', 'vwap_diff', 'ma_diff']
 SKIP_NORMALIZATION = ['day', 'weekday', 'day_minute', 'change', 'vwap_diff', 'ma_diff', 'body_%', 'high_shadow_%', 'low_shadow_%', 'rsi', 'bb_w', 'bb_p']
 
 # History to save for each row
 RSI_W = 14
 BB_W = 20
 MA_W = 5
-LOOKBEHIND_ROWS = [] # list(range(3 * LOOKAHEAD, 0, -1))
-LOOKBEHIND_ROWS_DIFF = [] # [2 * LOOKAHEAD, LOOKAHEAD]
+LOOKBEHIND_ROWS = [] # list(range(2 * LOOKAHEAD, 0, -1))
+LOOKBEHIND_ROWS_DIFF = [2 * LOOKAHEAD, LOOKAHEAD]
 LOOKBEHIND = max(max(LOOKBEHIND_ROWS, default=0), max(LOOKBEHIND_ROWS_DIFF, default=0)) + max(RSI_W, BB_W, MA_W)
 
 def build_dataset(data: pd.DataFrame, lookahead: int = LOOKAHEAD) -> Dataset:
@@ -51,8 +52,8 @@ def build_dataset(data: pd.DataFrame, lookahead: int = LOOKAHEAD) -> Dataset:
   add_time(dataset)
   add_price_diff(dataset)
   add_technical_indicators(dataset)
-  add_historical_data(dataset, ['high', 'low', 'close', 'volume', 'rsi', 'bb_p', 'bb_w', 'vwap_diff'], LOOKBEHIND_ROWS_DIFF, diff=True)
-  add_historical_data(dataset, ['change'], LOOKBEHIND_ROWS)
+  add_historical_data(dataset, LOOKBEHIND_COLUMNS_DIFF, LOOKBEHIND_ROWS_DIFF, diff=True)
+  add_historical_data(dataset, LOOKBEHIND_COLUMNS, LOOKBEHIND_ROWS)
 
   dataset.X = dataset.X[FEATURE_COLUMNS + dataset.new_columns]
 
@@ -96,7 +97,8 @@ def add_price_diff(dataset: Dataset):
   hlc3 = (high + low + close_price) / 3
   # dataset['hlc3'] = hlc3
   # dataset['ohlc4'] = (open_price + high + low + close_price) / 4
-  dataset['vwap_diff'] = vwap(hlc3.values, dataset['volume'].values) - hlc3
+  vwap_values = vwap(hlc3.values, dataset['volume'].values)
+  dataset['vwap_diff'] = (vwap_values - hlc3) / vwap_values
 
   high_shadow = []
   low_shadow = []
@@ -107,12 +109,20 @@ def add_price_diff(dataset: Dataset):
   
   height = high - low
   # dataset['height'] = height
-  dataset['body_%'] = np.abs(price_diff / height)
-
   # dataset['high_shadow'] = high_shadow
-  dataset['high_shadow_%'] = np.abs(high_shadow / height)
   # dataset['low_shadow'] = low_shadow
-  dataset['low_shadow_%'] = np.abs(low_shadow / height)
+
+  body_p = np.abs(price_diff / height)
+  body_p[np.isnan(body_p)] = 0
+  dataset['body_%'] = body_p
+
+  high_p = np.abs(high_shadow / height)
+  high_p[np.isnan(high_p)] = 0
+  dataset['high_shadow_%'] = high_p
+
+  low_p = np.abs(low_shadow / height)
+  low_p[np.isnan(low_p)] = 0
+  dataset['low_shadow_%'] = low_p
 
 @jit
 def vwap(typical_price: np.ndarray, volume: np.ndarray):
@@ -142,7 +152,7 @@ def add_technical_indicators(dataset: Dataset, all: bool = False):
     # Moving Average
     ma = sma_indicator(close, window=MA_W)
     # dataset['ma'] = ma
-    dataset['ma_diff'] = ma - close
+    dataset['ma_diff'] = (ma - close) / ma
 
     # TODO Ichimoku Cloud
     # https://technical-analysis-library-in-python.readthedocs.io/en/latest/ta.html#ta.trend.IchimokuIndicator

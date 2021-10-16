@@ -114,7 +114,6 @@ class SklearnClassifier(Classifier):
     self.classifier = classifier
   
   def fit(self, X_train, Y_train):
-    self.Y_train = Y_train
     SklearnClassifier.set_classes(self, Y_train)
     self.classifier.fit(self.get_values(X_train), Y_train)
   
@@ -155,7 +154,8 @@ def wrap_classifiers(dataset: Dataset, classifiers: list[Union[ClassifierMixin, 
   sklearn_classifiers = []
   for classifier in classifiers:
     if not isinstance(classifier, SklearnClassifier):
-      classifier = SklearnClassifier(dataset, classifier, version=version)
+      name = classifier.name if isinstance(classifier, Classifier) else None
+      classifier = SklearnClassifier(dataset, classifier, name=name, version=version)
     sklearn_classifiers.append(classifier)
   return sklearn_classifiers
 
@@ -199,6 +199,7 @@ class AbstractEnsembleClassifier(SklearnClassifier):
 
     self.verbose = verbose
     self._parallel = parallel
+    self._prefit = prefit
 
     estimators = list(map(lambda classifier: (classifier.name, classifier), self.estimators_))
     ensemble_classifier = self.get_ensemble_classifier(estimators)
@@ -206,7 +207,7 @@ class AbstractEnsembleClassifier(SklearnClassifier):
     if prefit:
       prefit_classifier = classifiers[0] # must be a trained Classifier
       ensemble_classifier.estimators_ = classifiers
-      SklearnClassifier.set_classes(ensemble_classifier, prefit_classifier.Y_train)
+      SklearnClassifier.set_classes(ensemble_classifier, prefit_classifier.dataset.Y_train)
 
     super().__init__(dataset, ensemble_classifier, name, version)
   
@@ -237,11 +238,9 @@ class VoteClassifier(AbstractEnsembleClassifier):
   
   def probabilities(self, X) -> np.ndarray:
     if self.voting == 'hard':
-      # TODO: Replace with the mean of probabilities for classifiers matching the prediction
-      predictions = np.array([classifier.predict(X) for classifier in self.classifiers]).T
-      class_counts = np.apply_along_axis(lambda x_predictions: np.bincount(x_predictions, minlength=len(self.classifier.classes_)), axis=1, arr=predictions)
-      probs = class_counts / np.full(class_counts.shape, len(self.classifiers))
-      return probs
+      predictions_probabilities = np.array([classifier.predict_proba(X) for classifier in self.classifiers]).T
+      mean_probabilities = np.mean(predictions_probabilities, axis=2).T
+      return mean_probabilities
     return super().probabilities(X)
   
   def get_params(self, deep=True):
@@ -254,13 +253,27 @@ class VoteClassifier(AbstractEnsembleClassifier):
 
 class StackClassifier(AbstractEnsembleClassifier):
 
-  def __init__(self, dataset: Dataset, classifiers: list[Union[ClassifierMixin, SklearnClassifier]], name: str = None, passthrough: bool = False, final_estimator: ClassifierMixin = None, cv = 2, parallel: bool = True, verbose: bool = False, version: str = None):
+  def __init__(self, dataset: Dataset, classifiers: list[Union[ClassifierMixin, SklearnClassifier]], name: str = None, passthrough: bool = False, final_estimator: ClassifierMixin = None, cv = 2, parallel: bool = True, prefit: bool = False, verbose: bool = False, version: str = None):
     self.cv = cv
     self.passthrough = passthrough
     self.final_estimator = final_estimator or ExtraTreesClassifier(n_estimators=500, random_state=RANDOM_STATE)
 
-    super().__init__(dataset, classifiers, name, parallel=parallel, verbose=verbose, version=version)
-  
+    super().__init__(dataset, classifiers, name, prefit, parallel, verbose, version)
+
+  def fit(self, X_train, Y_train):
+    if self._prefit:
+      names, all_estimators = self.classifier._validate_estimators()
+      stack_method = [self.classifier.stack_method] * len(all_estimators)
+      self.classifier.stack_method_ = [
+          self.classifier._method_name(name, est, meth)
+          for name, est, meth in zip(names, all_estimators, stack_method)
+      ]
+      self.classifier._le = self.classifier.le_
+      self.classifier.final_estimator_ = self.final_estimator
+      self.classifier.final_estimator_.fit(self.classifier.transform(self.get_values(X_train)), Y_train)
+    else:
+      super().fit(X_train, Y_train)
+
   def get_ensemble_classifier(self, estimators) -> ClassifierMixin:
       return StackingClassifier(estimators, final_estimator=self.final_estimator, cv=self.cv, passthrough=self.passthrough, verbose=2 if self.verbose else 0, n_jobs=-1 if self._parallel else None)
   

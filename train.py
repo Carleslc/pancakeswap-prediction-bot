@@ -9,7 +9,7 @@ from sklearn.svm import SVC
 from data import exists_data, get_data, save_data, load_data, DATA_FILE
 from classifier import Dataset, Classifier, RandomClassifier, SklearnClassifier, GridSearchClassifier, StackClassifier, VoteClassifier, wrap_classifiers
 from visualization import display_entries, preview_prediction, plot_balances
-from strategies import RSIClassifier, bet_same, bet_same_always, bet_greedy, bet_min_prob, bet_min_prob_greedy
+from strategies import RSIClassifier, MAClassifier, bet_same, bet_same_always, bet_greedy, bet_min_prob, bet_min_prob_greedy
 from settings import RANDOM_STATE, START_BALANCE, TRANSACTION_FEE, PRIZE_FEE, random_payout
 
 import preprocess
@@ -126,7 +126,7 @@ if __name__ == "__main__":
   FEATURE_IMPORTANCES = False
   PREVIEW_PREDICTIONS = False
 
-  BET_STRATEGIES = [bet_same_always, bet_min_prob] # bet_same, bet_min_prob, bet_greedy, bet_min_prob_greedy
+  BET_STRATEGIES = [bet_same_always, bet_min_prob, bet_same, bet_greedy, bet_min_prob_greedy]
 
   # Prepare data for training
   dataset = preprocess.get_dataset(data, preview=PREVIEW_DATA, preview_plot=PREVIEW_DATA_PLOT, best_features=KBEST_FEATURES, correlation_matrix=CORRELATION_MATRIX)
@@ -138,25 +138,29 @@ if __name__ == "__main__":
   GRADIENT_BOOST = GradientBoostingClassifier(n_estimators=500, n_iter_no_change=50, random_state=RANDOM_STATE)
   SVM = SVC(probability=True, random_state=RANDOM_STATE)
   RSI = RSIClassifier(dataset, 'RSI', version=VERSION)
+  MA = MAClassifier(dataset, 'MA', version=VERSION)
   # TODO: XGBoost
-
-  mix_classifiers = wrap_classifiers(dataset, [EXTRA_RANDOM_FOREST, GRADIENT_BOOST], VERSION)
-  STACK = StackClassifier(dataset, mix_classifiers, 'Stack', passthrough=True, verbose=True, version=VERSION) # *
 
   # Training
   RANDOM.train()
-  
-  for classifier in [RSI, STACK]:
+
+  stack_classifiers = wrap_classifiers(dataset, [EXTRA_RANDOM_FOREST, GRADIENT_BOOST], VERSION)
+  STACK = StackClassifier(dataset, stack_classifiers, 'Stack', passthrough=True, verbose=True, version=VERSION)
+
+  for classifier in [RSI, MA, STACK]:
     train_log(classifier)
   
-  VOTE = VoteClassifier(dataset, [*STACK.estimators_, RSI], 'Vote', voting='soft', weights=[1, 0.7, 0.3], prefit=True, verbose=True, version=VERSION) # *
-  VOTE_STACKING = VoteClassifier(dataset, [STACK, VOTE, RSI], 'VoteStacking', prefit=True, version=VERSION)
-  STACKING_VOTE = StackClassifier(dataset, [STACK, VOTE], 'StackingVote', passthrough=True, verbose=True, version=VERSION) # *
+  vote_classifiers = wrap_classifiers(dataset, [RSI, MA], VERSION)
+  VOTE_CUSTOM = VoteClassifier(dataset, vote_classifiers, 'VoteCustom', prefit=True, verbose=True, version=VERSION)
+  VOTE = VoteClassifier(dataset, [*STACK.estimators_, *VOTE_CUSTOM.estimators_], 'Vote', voting='soft', weights=[1, 0.75, 0.5, 0.5], prefit=True, verbose=True, version=VERSION)
+  STACKING_VOTE = StackClassifier(dataset, [STACK, VOTE_CUSTOM], 'StackingVote', prefit=True, passthrough=True, verbose=True, version=VERSION)
 
   train_log(STACKING_VOTE)
 
+  AGG_VOTE = VoteClassifier(dataset, [VOTE_CUSTOM, VOTE, STACKING_VOTE], 'Agg', prefit=True, verbose=True, version=VERSION)
+
   # Testing
-  classifiers: list[Classifier] = [RANDOM, *VOTE.estimators_, STACK, VOTE, VOTE_STACKING, STACKING_VOTE]
+  classifiers: list[Classifier] = [RANDOM, *VOTE_CUSTOM.estimators_, STACK, AGG_VOTE]
 
   for classifier in classifiers:
     print(f'\n{classifier}')
@@ -181,5 +185,5 @@ if __name__ == "__main__":
 
   print()
 
-  for classifier in [RSI, STACK, VOTE, STACKING_VOTE]:
+  for classifier in classifiers[1:]:
     classifier.save()
