@@ -22,7 +22,30 @@ PREVIEW_COLUMNS = ['close_time', 'open', 'close', 'high', 'low', 'change', 'volu
 DATA_FILE_LAST = f"{SYMBOL.replace('/', '').lower()}_last"
 
 # TODO: Sync blocks 5m
+# TODO: Training with rounds info
 # TODO: Auto bet
+
+# PancakePredictionV2 https://bscscan.com/address/0x18b2a687610328590bc8f2e5fedde3b582a49cda#contracts
+# https://api.bscscan.com/api?module=contract&action=getabi&address=0x18b2a687610328590bc8f2e5fedde3b582a49cda&apikey=
+# currentEpoch
+# minBetAmount
+# intervalSeconds
+# treasuryFee
+# paused
+# rounds
+
+# Oracle PancakeSwap BNB / USD EACAggregatorProxy https://bscscan.com/address/0xd276fcf34d54a926773c399ebaa772c12ec394ac#contracts
+# aggregator AccessControlledOffchainAggregator https://bscscan.com/address/0xe4de571bce6c099d9152a09231fa3c65f1a564b5#contracts
+# latestAnswer
+# latestTimestamp
+# proposedGetRoundData
+
+# BSCScan API
+# Limits: 5 calls/second, up to 100.000 calls/day
+# https://docs.bscscan.com/
+# https://docs.bscscan.com/api-endpoints/contracts
+# https://docs.bscscan.com/support/rate-limits
+# https://bscscan-python.pankotsias.com/bscscan.modules.html#module-bscscan.modules.contracts
 
 def show_current_price():
   current = get_current_price()
