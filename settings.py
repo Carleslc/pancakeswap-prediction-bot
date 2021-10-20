@@ -1,9 +1,7 @@
 from numpy.random import RandomState
 
-from api import Binance
+from api import Binance as API
 from utils import truncated_normal_generator
-
-API = Binance
 
 TIMEZONE = 'Europe/Madrid'
 

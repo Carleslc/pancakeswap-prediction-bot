@@ -22,15 +22,15 @@ def load_api_client(symbol: str = SYMBOL) -> API:
 
     load_dotenv()
 
-    api_key = os.getenv('API_KEY')
-    api_secret = os.getenv('API_SECRET')
+    api_key = os.getenv('BINANCE_API_KEY')
+    api_secret = os.getenv('BINANCE_API_SECRET')
 
     if not api_key:
-      error("Missing API_KEY (.env)")
+      error("Missing BINANCE_API_KEY (.env)")
     if not api_secret:
-      error("Missing API_SECRET (.env)")
+      error("Missing BINANCE_API_SECRET (.env)")
 
-    API_CLIENT = API(api_key, api_secret, SYMBOL)
+    API_CLIENT = API(api_key, api_secret, symbol)
   
   API_CLIENT.symbol = symbol
   

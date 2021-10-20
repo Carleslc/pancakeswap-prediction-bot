@@ -1,5 +1,6 @@
 from typing import TYPE_CHECKING
 
+import json
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -100,3 +101,6 @@ def display_entries(label: str, Y: np.ndarray):
     bears = total - bulls
     print(f"Entries ({label}): {total}")
     print(f"BULL: {bulls} ({((bulls / total)*100):.2f}%) | BEAR: {bears} ({((bears / total)*100):.2f}%)")
+
+def pretty(o: any) -> str:
+  return json.dumps(o, indent=2, default=str)

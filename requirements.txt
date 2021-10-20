@@ -5,6 +5,7 @@ matplotlib
 python-dotenv
 python-binance
 bscscan-python
+web3
 selenium
 sklearn
 scipy

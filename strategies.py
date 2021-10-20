@@ -77,5 +77,4 @@ class MAClassifier(Classifier):
     max_indices = np.argmax(predicted_probabilities, axis=1)
     return self.classes[max_indices]
 
-# TODO: BollingerClassifier
 # TODO: ConsensusClassifier (interactive.py voting version)
