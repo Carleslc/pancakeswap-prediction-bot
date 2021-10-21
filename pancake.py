@@ -45,14 +45,16 @@ def get_rounds_data(rounds: Iterable[int], bsc: BinanceSmartChain = None) -> pd.
       bearAmount = round_data[10]
       upPayout = totalAmount / bullAmount if bullAmount != 0 else 1.0
       downPayout = totalAmount / bearAmount if bearAmount != 0 else 1.0
+      change = closePrice - lockPrice
       result = 1 if closePrice > lockPrice else (-1 if closePrice < lockPrice else 0)
       round_data.append(upPayout)
       round_data.append(downPayout)
+      round_data.append(change)
       round_data.append(result)
       rounds_data.append(round_data)
       print(f'#{epoch}')
 
-  rounds_data = pd.DataFrame(rounds_data, columns=['epoch', 'startTimestamp', 'lockTimestamp', 'closeTimestamp', 'lockPrice', 'closePrice', 'lockOracleId', 'closeOracleId', 'totalAmount', 'bullAmount', 'bearAmount', 'rewardBaseCalAmount', 'rewardAmount', 'oracleCalled', 'upPayout', 'downPayout', 'result'])
+  rounds_data = pd.DataFrame(rounds_data, columns=['epoch', 'startTimestamp', 'lockTimestamp', 'closeTimestamp', 'lockPrice', 'closePrice', 'lockOracleId', 'closeOracleId', 'totalAmount', 'bullAmount', 'bearAmount', 'rewardBaseCalAmount', 'rewardAmount', 'oracleCalled', 'upPayout', 'downPayout', 'change', 'result'])
   rounds_data.set_index('epoch', inplace=True, drop=False, verify_integrity=True)
 
   return rounds_data

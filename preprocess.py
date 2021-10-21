@@ -14,6 +14,8 @@ from visualization import display_entries, preview_dataset, plot_correlation_mat
 
 from utils import error, datetime_from_ms
 
+# TODO: pancake_prediction.csv predict Y = pancake_prediction[pancake_prediction['closeTimestamp' >= t + LOOKAHEAD]][0].result
+
 # Columns to use for training
 FEATURE_COLUMNS = ['high', 'low', 'close', 'volume']
 LOOKBEHIND_COLUMNS = ['change']
