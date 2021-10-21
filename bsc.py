@@ -1,9 +1,10 @@
 from typing import Callable, Union
 from web3.types import ABI, ABIFunction
-from eth_typing.evm import ChecksumAddress
+from eth_typing.evm import AnyAddress, ChecksumAddress
 from hexbytes.main import HexBytes
 
 import os
+from time import sleep
 
 from dotenv import load_dotenv
 
@@ -19,9 +20,19 @@ from web3._utils.abi import abi_to_signature, get_abi_input_types, get_abi_input
 from web3.exceptions import ContractLogicError
 
 # BSCScan API
-# Limits: 5 calls/second, up to 100.000 calls/day
 # https://docs.bscscan.com/
 # https://docs.bscscan.com/support/rate-limits
+# Limits: 5 calls/second, up to 100.000 calls/day
+MAX_BSC_SCAN_API_CALLS_PER_SECOND = 5
+
+def _ratelimit(max_calls_per_second: int = MAX_BSC_SCAN_API_CALLS_PER_SECOND):
+  sleep(1/max_calls_per_second)
+
+def ratelimit(f):
+  def decorator(*args, **kwargs):
+    _ratelimit()
+    return f(*args, **kwargs)
+  return decorator
 
 class BinanceSmartChain:
 
@@ -76,6 +87,7 @@ class BinanceSmartChain:
   def functions(self) -> ContractFunctions:
     return self.contract.functions
   
+  @ratelimit
   def get_bnb_balance(self):
     return from_wei(self._scan.get_bnb_balance(self._address))
 
@@ -85,6 +97,7 @@ class BinanceSmartChain:
     # https://docs.bscscan.com/api-endpoints/contracts#get-contract-abi-for-verified-contract-source-codes
     # https://api.bscscan.com/api?module=contract&action=getabi&address=ADDRESS&apikey=
     # https://bscscan-python.pankotsias.com/bscscan.modules.html#bscscan.modules.contracts.Contracts.get_contract_abi
+    _ratelimit()
     return self._scan.get_contract_abi(self._address)
   
   def get_contract_info(self) -> list:
@@ -92,9 +105,11 @@ class BinanceSmartChain:
       # https://docs.bscscan.com/api-endpoints/contracts#get-contract-source-code-for-verified-contract-source-codes
       # https://api.bscscan.com/api?module=contract&action=getsourcecode&address=ADDRESS&apikey=
       # https://bscscan-python.pankotsias.com/bscscan.modules.html#bscscan.modules.contracts.Contracts.get_contract_source_code
+      _ratelimit()
       self._info = self._scan.get_contract_source_code(self._address)
     return self._info
 
+  @ratelimit
   def get_contract_circulating_supply(self) -> float:
     return float(self._scan.get_circulating_supply_by_contract_address(self._address))
   
@@ -109,6 +124,7 @@ class BinanceSmartChain:
     if address == self._address:
       info = self.get_contract_info()
     else:
+      _ratelimit()
       info = self._scan.get_contract_source_code(address)
     return info[0]['Proxy'] != '0'
   
@@ -125,6 +141,7 @@ class BinanceSmartChain:
         self._info = None
         self._set_contract()
       else:
+        _ratelimit()
         self._contract = self._get_contract(self._address, self._scan.get_contract_abi(self._implementation))
         self._add_methods(self._contract)
 
@@ -153,6 +170,7 @@ class BinanceSmartChain:
 
   def _get_contract(self, address: str, abi: ABI = None) -> Contract:
     if abi is None:
+      _ratelimit()
       abi = self._scan.get_contract_abi(address)
     return self._web3.eth.contract(address=address, abi=abi)
   
@@ -160,6 +178,7 @@ class BinanceSmartChain:
     for f in contract.all_functions():
       setattr(self, str(f.function_identifier), self.wrap_call(f))
 
+  @ratelimit
   def __call__(self, data: str) -> str:
     return self._scan.get_proxy_call(to=self._address, data=data)
 
@@ -224,6 +243,9 @@ def get_abi_output_names(abi: ABIFunction) -> list[str]:
 
 def hexBytesToAddress(hexbytes: HexBytes) -> str:
   return HexBytes(hexbytes.hex()[-40:]).hex()
+
+def same_address(address1: AnyAddress, address2: AnyAddress) -> bool:
+  return HexBytes(address1) == HexBytes(address2)
 
 BSC_CLIENT = None
 
