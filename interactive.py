@@ -5,7 +5,7 @@ import pandas as pd
 
 from math import ceil
 from settings import SYMBOL, TRANSACTION_FEE
-from data import get_data, save_data, load_data, get_current_price, DATA_FILE
+from data import get_binance_data, save_data, load_data, get_current_price, DATA_FILE
 from preprocess import prepare
 from strategies import bet_min_prob_greedy as get_bet
 from visualization import ms_to_datetime
@@ -30,7 +30,7 @@ def show_current_price():
   print(f"\n{current['symbol']} {round(current['price'], DECIMALS)} | Average {round(current['avg']['price'], DECIMALS)} ({current['avg']['mins']}m)\n")
 
 def get_last_data(preview: bool = True) -> pd.DataFrame:
-  save_data(get_data(length='1 day'), DATA_FILE_LAST)
+  save_data(get_binance_data(length='1 day'), DATA_FILE_LAST)
 
   data = load_data(DATA_FILE_LAST)
   dataset = prepare(data)

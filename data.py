@@ -36,7 +36,7 @@ def load_api_client(symbol: str = SYMBOL) -> API:
   
   return API_CLIENT
 
-def get_data(symbol = SYMBOL, length = LENGTH, interval = INTERVAL) -> pd.DataFrame:
+def get_binance_data(symbol = SYMBOL, length = LENGTH, interval = INTERVAL) -> pd.DataFrame:
   load_api_client(symbol)
 
   print(f"Fetching data from Binance ({API_CLIENT.symbol.upper()} {length} {interval})...")
@@ -80,17 +80,19 @@ def save_data(data: pd.DataFrame, filename: str = DATA_FILE):
   
   _save_data(write_data_csv, filename, 'csv')
 
-def load_data(filename: str = DATA_FILE, columns: list[str] = None) -> pd.DataFrame:
-  print("Loading data...")
+def load_data(filename: str = DATA_FILE, columns: list[str] = None, index_column: str = None) -> pd.DataFrame:
+  print(f"Loading {filename}...")
   path = get_data_file_path(filename)
   data = pd.read_csv(path)
+  if index_column is not None:
+    data.set_index(index_column, inplace=True, drop=False, verify_integrity=True)
   data = pd.DataFrame(data, columns=columns)
   print(f"Loaded: {path}")
   return data
 
 if __name__ == "__main__":
   if not exists_data():
-    save_data(get_data())
+    save_data(get_binance_data())
 
   data = load_data(columns=['close_time', 'close'])
 

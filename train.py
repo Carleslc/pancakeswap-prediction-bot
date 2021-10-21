@@ -6,7 +6,7 @@ from sklearn.base import ClassifierMixin
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, ExtraTreesClassifier
 from sklearn.svm import SVC
 
-from data import exists_data, get_data, save_data, load_data, DATA_FILE
+from data import exists_data, get_binance_data, save_data, load_data, DATA_FILE
 from classifier import Dataset, Classifier, RandomClassifier, SklearnClassifier, GridSearchClassifier, StackClassifier, VoteClassifier, wrap_classifiers
 from visualization import display_entries, preview_prediction, plot_balances
 from strategies import RSIClassifier, MAClassifier, bet_same, bet_same_always, bet_greedy, bet_min_prob, bet_min_prob_greedy
@@ -113,7 +113,7 @@ def train_log(classifier: Classifier):
 if __name__ == "__main__":
   # Load data
   if not exists_data():
-    save_data(get_data())
+    save_data(get_binance_data())
 
   data = load_data()
 
