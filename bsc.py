@@ -126,7 +126,10 @@ class BinanceSmartChain:
     else:
       _ratelimit()
       info = self._scan.get_contract_source_code(address)
-    return info[0]['Proxy'] != '0'
+    is_proxy = info[0]['Proxy'] != '0'
+    if self._debug and is_proxy:
+      print(f'{address} is Proxy')
+    return is_proxy
   
   def resolve_proxy(self, override: bool = False):
     try:

@@ -21,8 +21,8 @@ PancakePredictionV2 = '0x18b2a687610328590bc8f2e5fedde3b582a49cda'
 # paused
 # rounds
 
-PancakeOracle_BNB_USD = '0xd276fcf34d54a926773c399ebaa772c12ec394ac'
-# Oracle PancakeSwap BNB / USD EACAggregatorProxy https://bscscan.com/address/0xd276fcf34d54a926773c399ebaa772c12ec394ac#contracts
+PancakeOracle_BNB_USD = '0x0567F2323251f0Aab15c8dFb1967E4e8A7D42aeE'
+# Oracle PancakeSwap BNB / USD EACAggregatorProxy https://bscscan.com/address/0x0567F2323251f0Aab15c8dFb1967E4e8A7D42aeE#contracts
 # latestAnswer
 # latestTimestamp
 # proposedGetRoundData
@@ -69,7 +69,7 @@ def update_rounds_data(current_epoch: int, bsc: BinanceSmartChain = None) -> pd.
     if current_epoch >= update_from_epoch:
       new_rounds_data = get_rounds_data(range(update_from_epoch, current_epoch + 1), bsc)
       saved_rounds_data.drop(range(update_from_epoch, last_saved_epoch + 1), inplace=True)
-      rounds_data = saved_rounds_data.append(new_rounds_data, verify_integrity=True)
+      rounds_data = pd.concat([saved_rounds_data, new_rounds_data], verify_integrity=True)
     else:
       rounds_data = saved_rounds_data
   else:
@@ -80,15 +80,21 @@ def update_rounds_data(current_epoch: int, bsc: BinanceSmartChain = None) -> pd.
   return load_data(PREDICTION_DATA_FILE, index_column='epoch')
 
 if __name__ == "__main__":
-  with bsc_client(PancakeOracle_BNB_USD) as pancake_oracle:
-    print(f'\nChainlink Oracle ({pancake_oracle.name})', pancake_oracle.address)
-    print(f'\n{pancake_oracle.description()}')
-    decimals = pancake_oracle.decimals()
-    latest_answer = pancake_oracle.latestAnswer()
-    latest_datetime = datetime.fromtimestamp(pancake_oracle.latestTimestamp())
-    print(f'\nLatest: {from_wei(latest_answer, decimals)} USD ({latest_datetime})')
-  
   with bsc_client(PancakePredictionV2) as pancake_prediction:
+    oracle_bnb_usd_address = pancake_prediction.oracle()
+
+    if oracle_bnb_usd_address != PancakeOracle_BNB_USD:
+      print(f'\nNEW ORACLE: {oracle_bnb_usd_address}')
+
+    with bsc_client(oracle_bnb_usd_address) as pancake_oracle:
+      print(f'\nChainlink Oracle ({pancake_oracle.name})', pancake_oracle.address)
+      print('\n'.join(pancake_oracle.list_functions()))
+      print(f'\n{pancake_oracle.description()}')
+      decimals = pancake_oracle.decimals()
+      latest_answer = pancake_oracle.latestAnswer()
+      latest_datetime = datetime.fromtimestamp(pancake_oracle.latestTimestamp())
+      print(f'\nLatest: {from_wei(latest_answer, decimals)} USD ({latest_datetime})')
+
     print(f'\n{pancake_prediction.name}', pancake_prediction.address)
     print(f'\nBalance: {pancake_prediction.get_bnb_balance()} BNB')
     print('\n' + '\n'.join(pancake_prediction.list_functions()))
