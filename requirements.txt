@@ -7,7 +7,7 @@ python-binance
 bscscan-python
 web3
 selenium
-sklearn
+scikit-learn
 scipy
 seaborn
 xgboost
